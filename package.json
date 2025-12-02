@@ -1,0 +1,90 @@
+{
+  "name": "multi-ai-chat",
+  "displayName": "Multi-AI Chat",
+  "description": "AI Chat assistant with code context for VS Code",
+  "version": "0.0.1",
+  "publisher": "your-publisher-name",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vadymmak/multi-ai-chat-vscode"
+  },
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "multi-ai-chat.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "multi-ai-chat.openChat",
+        "title": "Multi-AI Chat: Open Chat Panel"
+      }
+    ],
+    "configuration": {
+      "title": "Multi-AI Chat",
+      "properties": {
+        "multiAIChat.apiBaseUrl": {
+          "type": "string",
+          "default": "https://trustworthy-embrace-production-4d2c.up.railway.app/api",
+          "description": "Base URL for the Multi-AI Chat API"
+        },
+        "multiAIChat.defaultModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Default AI model to use"
+        },
+        "multiAIChat.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Logging level"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test",
+    "build:webview": "cd webview-ui && npm run build",
+    "watch:webview": "cd webview-ui && npm run dev",
+    "install:all": "npm install && cd webview-ui && npm install"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.106.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/axios": "^0.14.0",
+    "typescript-eslint": "^8.46.3",
+    "eslint": "^9.39.1",
+    "typescript": "^5.9.3",
+    "ts-loader": "^9.5.4",
+    "webpack": "^5.102.1",
+    "webpack-cli": "^6.0.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
