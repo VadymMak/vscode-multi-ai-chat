@@ -1,11 +1,12 @@
 import React from "react";
-import { useAuth } from "./hooks/useAuth";
+import { useAuth } from "./contexts/AuthContext";
 import LoginForm from "./components/auth/LoginForm";
 import ChatView from "./components/chat/ChatView";
-import "./App.css"; // Importing application-specific styles
+import "./App.css";
 
 const App: React.FC = () => {
-  const { isAuthenticated, login, logout } = useAuth();
+  const { authStatus, logout } = useAuth(); // ✅ убрали login - он не нужен
+  const isAuthenticated = authStatus === "authenticated";
 
   return (
     <div className="app-container">
@@ -18,7 +19,18 @@ const App: React.FC = () => {
         )}
       </header>
       <main className="app-main">
-        {isAuthenticated ? <ChatView /> : <LoginForm onLogin={login} />}
+        {isAuthenticated ? (
+          <ChatView />
+        ) : (
+          <LoginForm
+            onSuccess={() => {
+              console.log("Login successful!");
+            }}
+            onError={(message) => {
+              console.error("Login error:", message);
+            }}
+          />
+        )}
       </main>
       <footer className="app-footer">
         <p>Powered by AI</p>

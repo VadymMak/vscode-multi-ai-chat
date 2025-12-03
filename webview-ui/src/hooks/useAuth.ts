@@ -16,14 +16,25 @@ export function useAuth(): UseAuthReturn {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("unauthenticated");
 
   // Function to handle user login
+  // Function to handle user login
   const login = async (username: string, password: string) => {
     try {
+      console.log("🔧 useAuth.login START");
+      console.log("🔧 useAuth.login current authStatus:", authStatus);
+
       setAuthStatus("authenticating");
+      console.log("🔧 useAuth.login set authStatus to: authenticating");
+
       const response = await apiService.login(username, password);
+      console.log("🔧 useAuth.login got response:", response);
+
       setUser(response.user);
+      console.log("🔧 useAuth.login set user:", response.user);
+
       setAuthStatus("authenticated");
+      console.log("🔧 useAuth.login set authStatus to: authenticated");
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error("🔧 useAuth.login ERROR:", error);
       setAuthStatus("unauthenticated");
     }
   };

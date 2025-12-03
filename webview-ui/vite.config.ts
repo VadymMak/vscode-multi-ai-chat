@@ -29,11 +29,4 @@ export default defineConfig({
   optimizeDeps: {
     include: ["react", "react-dom"],
   },
-  css: {
-    preprocessorOptions: {
-      css: {
-        additionalData: `@import "@/index.css";`,
-      },
-    },
-  },
 });

@@ -1,61 +1,126 @@
 // webview-ui/src/services/apiService.ts
 
-import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
-import { ApiResponse, ApiError } from "../types"; // Assuming these types are defined in the frontend-specific type definitions
-import { logError } from "../utils"; // Assuming a logging utility exists in the frontend utils
+import axios, { AxiosInstance } from "axios";
 
-// Define a base URL for the API
-const API_BASE_URL = "https://api.example.com"; // Replace with the actual API base URL
+// ✅ Railway backend URL
+const API_BASE_URL = "https://multi-ai-chat-production.up.railway.app";
 
-// Create an Axios instance for API requests
+// Create Axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 5000, // Set a timeout for requests
+  timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// Function to handle API responses
-const handleResponse = <T>(response: AxiosResponse<T>): ApiResponse<T> => {
-  return {
-    data: response.data,
-    status: response.status,
-    statusText: response.statusText,
-  };
+// ✅ ДОБАВЛЕНО: Store token
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+  console.log("🔧 setAuthToken called:", token ? "Token set" : "Token cleared");
+}
+
+// ✅ ДОБАВЛЕНО: Request interceptor to add token
+apiClient.interceptors.request.use(
+  (config) => {
+    if (authToken) {
+      config.headers.Authorization = `Bearer ${authToken}`;
+      console.log("🔧 Request interceptor: Added token to", config.url);
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// ✅ API Service object
+export const apiService = {
+  // Login method
+  login: async (username: string, password: string) => {
+    const formData = new URLSearchParams();
+    formData.append("grant_type", "password");
+    formData.append("username", username);
+    formData.append("password", password);
+
+    const response = await apiClient.post("/api/auth/login", formData, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
+
+    console.log("🔧 apiService.login response:", response.data);
+
+    const result = {
+      user: response.data.user,
+      token: response.data.access_token,
+    };
+
+    // ✅ ДОБАВЛЕНО: Save token
+    setAuthToken(result.token);
+
+    console.log("🔧 apiService.login returning:", result);
+
+    return result;
+  },
+
+  // Logout method
+  logout: async () => {
+    // ✅ ДОБАВЛЕНО: Clear token
+    setAuthToken(null);
+    return { success: true };
+  },
+
+  // Check auth status
+  checkAuth: async () => {
+    try {
+      const response = await apiClient.get("/api/auth/me");
+      return {
+        isAuthenticated: true,
+        user: response.data,
+      };
+    } catch (error) {
+      console.log(error);
+      return {
+        isAuthenticated: false,
+        user: null,
+      };
+    }
+  },
 };
 
-// Function to handle API errors
-const handleError = (error: AxiosError): ApiError => {
-  logError("API Error", error); // Log the error for debugging
-  return {
-    message: error.message,
-    status: error.response?.status || 500,
-    statusText: error.response?.statusText || "Internal Server Error",
-  };
+// Legacy exports
+export const fetchData = async <T>(endpoint: string): Promise<T> => {
+  const response = await apiClient.get<T>(endpoint);
+  return response.data;
 };
 
-// Example function to get data from the API
-export const fetchData = async <T>(
-  endpoint: string
-): Promise<ApiResponse<T> | ApiError> => {
+export const postData = async <T, U>(endpoint: string, data: U): Promise<T> => {
+  const response = await apiClient.post<T>(endpoint, data);
+  return response.data;
+};
+
+// ✅ Chat functions
+export const fetchChatHistory = async () => {
   try {
-    const response = await apiClient.get<T>(endpoint);
-    return handleResponse(response);
+    const response = await apiClient.get("/api/chat/history");
+    return response.data.messages || [];
   } catch (error) {
-    return handleError(error as AxiosError);
+    console.error("Failed to fetch chat history:", error);
+    return [];
   }
 };
 
-// Example function to post data to the API
-export const postData = async <T, U>(
-  endpoint: string,
-  data: U
-): Promise<ApiResponse<T> | ApiError> => {
+export const sendMessage = async (content: string) => {
   try {
-    const response = await apiClient.post<T>(endpoint, data);
-    return handleResponse(response);
+    const response = await apiClient.post("/api/chat/send", {
+      content: content,
+    });
+    return response.data;
   } catch (error) {
-    return handleError(error as AxiosError);
+    console.error("Failed to send message:", error);
+    throw error;
   }
 };

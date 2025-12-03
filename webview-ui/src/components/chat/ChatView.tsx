@@ -1,30 +1,34 @@
-import React, { useState, useEffect } from "react";
-import { Message } from "../types/index";
-import { fetchChatHistory, sendMessage } from "../services/apiService";
+import React, { useState } from "react";
+import { Message } from "../../types/index";
+import { sendMessage } from "../../services/apiService";
 import "./ChatView.css";
 
 const ChatView: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Fetch chat history when component mounts
-    const loadChatHistory = async () => {
-      try {
-        setLoading(true);
-        const history = await fetchChatHistory();
-        setMessages(history);
-      } catch (err) {
-        setError("Failed to load chat history.");
-      } finally {
-        setLoading(false);
-      }
-    };
+  // useEffect(() => {
+  //   // Fetch chat history when component mounts
+  //   const loadChatHistory = async () => {
+  //     try {
+  //       setLoading(true);
+  //       const history = await fetchChatHistory();
+  //       setMessages(history);
+  //     } catch (error) {
+  //       const errorMessage =
+  //         error instanceof Error
+  //           ? error.message
+  //           : "Failed to load chat history.";
+  //       setError(errorMessage);
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   };
 
-    loadChatHistory();
-  }, []);
+  //   loadChatHistory();
+  // }, []);
 
   const handleSend = async () => {
     if (!inputValue.trim()) return;
@@ -45,7 +49,9 @@ const ChatView: React.FC = () => {
         { ...response, sender: "ai" },
       ]);
     } catch (err) {
-      setError("Failed to send message.");
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to send message";
+      setError(errorMessage);
     }
   };
 

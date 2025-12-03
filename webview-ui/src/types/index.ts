@@ -1,8 +1,6 @@
 // webview-ui/src/types/index.ts
 
-// This file contains frontend-specific type definitions for the webview UI.
-// These types are used throughout the webview components to ensure type safety
-// and consistency in the data structures used in the React application.
+// Frontend-specific type definitions for the webview UI
 
 export interface User {
   id: string;
@@ -13,9 +11,10 @@ export interface User {
 export interface Message {
   id: string;
   content: string;
-  timestamp: Date;
-  senderId: string;
-  receiverId: string;
+  timestamp: string;
+  senderId?: string;
+  receiverId?: string;
+  sender?: string;
 }
 
 export interface ChatSession {
@@ -36,7 +35,12 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-// These types can be expanded as the application grows to include more complex
-// data structures or additional features. They serve as a foundation for the
-// webview's type system, ensuring that components and services can rely on
-// consistent and well-defined data shapes.
+// ✅ ДОБАВЛЕНО: Auth Status type
+export type AuthStatus = "authenticated" | "authenticating" | "unauthenticated";
+
+// ✅ ДОБАВЛЕНО: API Error type
+export interface ApiError {
+  message: string;
+  status: number;
+  statusText: string;
+}

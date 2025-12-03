@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useAuth } from "../../hooks/useAuth";
+import { useAuth } from "../../contexts/AuthContext";
 import "../../App.css"; // Assuming global styles are applied here
 
 interface LoginFormProps {
@@ -21,7 +21,11 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onError }) => {
       await login(username, password);
       onSuccess();
     } catch (error) {
-      onError("Login failed. Please check your credentials and try again.");
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Login failed. Please check your credentials and try again.";
+      onError(errorMessage);
     } finally {
       setLoading(false);
     }

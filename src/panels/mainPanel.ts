@@ -1,4 +1,7 @@
 import * as vscode from "vscode";
+import * as path from "path";
+import * as fs from "fs";
+import logger from "../utils/logger";
 
 export class MainPanel {
   public static currentPanel: MainPanel | undefined;
@@ -16,14 +19,16 @@ export class MainPanel {
       return;
     }
 
-    // ✅ Замени Constants на строки:
     const panel = vscode.window.createWebviewPanel(
-      "mainPanel", // ✅ вместо Constants.VIEW_TYPE
-      "Multi AI Chat", // ✅ вместо Constants.PANEL_TITLE
+      "mainPanel",
+      "Multi AI Chat",
       column || vscode.ViewColumn.One,
       {
         enableScripts: true,
-        localResourceRoots: [vscode.Uri.joinPath(extensionUri, "media")],
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(extensionUri, "webview-ui", "dist"),
+        ],
       }
     );
 
@@ -47,12 +52,20 @@ export class MainPanel {
       this._disposables
     );
 
+    // ✅ Handle messages from webview
     this._panel.webview.onDidReceiveMessage(
-      (message) => {
+      async (message) => {
         switch (message.command) {
+          case "login":
+            logger.info(`Login attempt: ${message.username}`);
+            // TODO: Handle login through AuthManager
+            break;
+          case "sendMessage":
+            logger.info(`Message from webview: ${message.text}`);
+            break;
           case "alert":
             vscode.window.showErrorMessage(message.text);
-            return;
+            break;
         }
       },
       null,
@@ -74,42 +87,47 @@ export class MainPanel {
 
   private _update() {
     const webview = this._panel.webview;
-    this._panel.title = "Multi AI Chat"; // ✅
+    this._panel.title = "Multi AI Chat";
     this._panel.webview.html = this._getHtmlForWebview(webview);
   }
 
   private _getHtmlForWebview(webview: vscode.Webview): string {
-    const scriptPathOnDisk = vscode.Uri.joinPath(
+    // ✅ Path to React build
+    const distPath = path.join(this._extensionUri.fsPath, "webview-ui", "dist");
+    const htmlPath = path.join(distPath, "index.html");
+
+    // ✅ Read the built HTML
+    let html = fs.readFileSync(htmlPath, "utf8");
+
+    // ✅ Replace asset paths with webview URIs
+    const assetPath = vscode.Uri.joinPath(
       this._extensionUri,
-      "media",
-      "main.js"
+      "webview-ui",
+      "dist",
+      "assets"
+    );
+    const assetUri = webview.asWebviewUri(assetPath);
+
+    // ✅ Replace /assets/ with webview URI
+    html = html.replace(/\/assets\//g, `${assetUri.toString()}/`);
+
+    // ✅ Add CSP
+    const nonce = getNonce();
+    html = html.replace(
+      "<head>",
+      `<head>
+      <meta http-equiv="Content-Security-Policy" 
+            content="default-src 'none'; 
+                     style-src ${webview.cspSource} 'unsafe-inline'; 
+                     script-src 'nonce-${nonce}' ${webview.cspSource}; 
+                     connect-src https://multi-ai-chat-production.up.railway.app;
+                     img-src ${webview.cspSource} https: data:;">`
     );
 
-    const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
-    const nonce = getNonce();
+    // ✅ Add nonce to scripts
+    html = html.replace(/<script/g, `<script nonce="${nonce}"`);
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multi AI Chat</title>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</head>
-<body>
-  <h1>Hello from the Main Panel!</h1>
-  <button onclick="sendMessage()">Send Message</button>
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    function sendMessage() {
-      vscode.postMessage({
-        command: 'alert',
-        text: 'Hello from the webview!'
-      });
-    }
-  </script>
-</body>
-</html>`;
+    return html;
   }
 }
 

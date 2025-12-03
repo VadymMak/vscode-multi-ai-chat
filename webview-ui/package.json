@@ -1,5 +1,6 @@
 {
   "name": "vscode-multi-ai-chat-webview",
+  "type": "module",
   "version": "1.0.0",
   "description": "Webview components for the VS Code Multi AI Chat extension",
   "main": "src/main.tsx",
