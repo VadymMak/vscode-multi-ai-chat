@@ -1,31 +1,58 @@
-import { User, Message } from "../types/index";
+import logger from "./logger"; // ✅ default import
+import { ValidationError } from "../errors";
+// ❌ УДАЛИ: import { AppConstants } from "../constants";
 
-/**
- * Utility function to check if a string is a valid JSON.
- * @param str The string to check.
- * @returns True if the string is valid JSON, otherwise false.
- */
-export function isValidJson(str: string): boolean {
+export function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+export function isNotEmpty(value: string): boolean {
+  return value.trim().length > 0;
+}
+
+export function isValidUsername(username: string): boolean {
+  // ✅ Константы напрямую:
+  const MIN_USERNAME_LENGTH = 3;
+  const MAX_USERNAME_LENGTH = 20;
+
+  return (
+    username.length >= MIN_USERNAME_LENGTH &&
+    username.length <= MAX_USERNAME_LENGTH
+  );
+}
+
+export function safeJsonParse<T>(jsonString: string): T | null {
   try {
-    JSON.parse(str);
-    return true;
-  } catch (e) {
-    return false;
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    logger.error("Failed to parse JSON string", error as Error); // ✅
+    return null;
   }
 }
 
-/**
- * Utility function to debounce a function call.
- * @param func The function to debounce.
- * @param wait The number of milliseconds to delay.
- * @returns A debounced version of the function.
- */
+export function handleError(error: Error): void {
+  if (error instanceof ValidationError) {
+    logger.warn("Validation error occurred:"); // ✅ удали второй аргумент
+  } else {
+    logger.error("An unexpected error occurred:", error); // ✅
+  }
+}
+
+export function formatDate(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 export function debounce<T extends (...args: any[]) => void>(
   func: T,
   wait: number
 ): T {
   let timeout: NodeJS.Timeout;
-  return function executedFunction(...args: Parameters<T>): void {
+  return function executedFunction(...args: Parameters<T>) {
     const later = () => {
       clearTimeout(timeout);
       func(...args);
@@ -35,65 +62,24 @@ export function debounce<T extends (...args: any[]) => void>(
   } as T;
 }
 
-/**
- * Format a message for display
- */
-export function formatMessage(message: Message): string {
-  return `${message.senderId}: ${message.content}`;
-}
-
-/**
- * Get user display name
- */
-export function getUserDisplayName(user: User): string {
-  return user.username || user.email;
-}
-
-/**
- * Fetch with timeout support
- * @param url The URL to fetch
- * @param options Fetch options
- * @param timeout Timeout in milliseconds (default: 30000)
- * @returns Promise with fetch response
- */
-export async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {},
-  timeout: number = 30000
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`Request timeout after ${timeout}ms`);
+export function throttle<T extends (...args: any[]) => void>(
+  func: T,
+  limit: number
+): T {
+  let lastFunc: NodeJS.Timeout;
+  let lastRan: number;
+  return function executedFunction(...args: Parameters<T>) {
+    if (!lastRan) {
+      func(...args);
+      lastRan = Date.now();
+    } else {
+      clearTimeout(lastFunc);
+      lastFunc = setTimeout(() => {
+        if (Date.now() - lastRan >= limit) {
+          func(...args);
+          lastRan = Date.now();
+        }
+      }, limit - (Date.now() - lastRan));
     }
-    throw error;
-  }
-}
-
-/**
- * Safely parse JSON with fallback
- */
-export function safeJsonParse<T>(str: string, fallback: T): T {
-  try {
-    return JSON.parse(str);
-  } catch {
-    return fallback;
-  }
-}
-
-/**
- * Deep clone an object
- */
-export function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
+  } as T;
 }

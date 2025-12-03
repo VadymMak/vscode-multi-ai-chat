@@ -1,119 +1,60 @@
-// src/controllers/appController.ts
+import * as vscode from "vscode";
+import DataService from "../services/dataService"; // ✅
+import AuthManager from "../auth/authManager"; // ✅
+import logger from "../utils/logger"; // ✅
+import AIProvider from "../providers/aiProvider"; // ✅
+// Main application controller class
+export class AppController {
+  private static instance: AppController;
+  private dataService: DataService;
+  private authManager: AuthManager;
+  private aiProvider: AIProvider;
 
-import { User, Message } from "../types/index";
-import logger from "../utils/logger";
-import apiClient from "../api/apiClient";
-import aiProviderService from "../providers/aiProvider";
-import dataService from "../services/dataService";
-import config from "../config/index";
-
-// AppController class to manage application logic
-class AppController {
-  private logger = logger;
-  private config = config;
-  private apiClient = apiClient;
-  private aiProvider = aiProviderService;
-  private dataService = dataService;
-
-  constructor() {
-    // All services are already initialized as singletons
-    this.logger.info("AppController created");
+  private constructor() {
+    this.dataService = DataService.getInstance();
+    this.authManager = AuthManager.getInstance();
+    this.aiProvider = new AIProvider();
   }
 
-  async initialize(): Promise<void> {
+  // Singleton pattern to ensure only one instance of AppController
+  public static getInstance(): AppController {
+    if (!AppController.instance) {
+      AppController.instance = new AppController();
+    }
+    return AppController.instance;
+  }
+
+  // Initialize the application
+  public async initialize(context: vscode.ExtensionContext): Promise<void> {
     try {
-      this.logger.info("Initializing application...");
-      // TODO: Add initialization logic here
-      // For example: check auth status, load initial data
-      this.logger.info("Application initialized successfully.");
+      logger.info("Initializing AppController...");
+
+      await this.dataService.initialize();
+      this.registerCommands(context);
+      logger.info("AppController initialized successfully.");
     } catch (error) {
-      this.logger.error("Failed to initialize application:", error);
-      throw error;
+      logger.error("Failed to initialize AppController", error as Error); // ✅
     }
   }
 
-  async login(email: string, password: string): Promise<User> {
-    try {
-      this.logger.info(`Attempting to log in user: ${email}`);
-
-      // Call login endpoint
-      const data = await apiClient.post<{ token: string; user: User }>(
-        "/auth/login",
-        {
-          email,
-          password,
+  // Register VS Code commands
+  private registerCommands(context: vscode.ExtensionContext): void {
+    const disposable = vscode.commands.registerCommand(
+      "vscode-multi-ai-chat.start",
+      async () => {
+        logger.info('Command "vscode-multi-ai-chat.start" executed.');
+        try {
+          const response = await this.aiProvider.getAIResponse("Hello AI!");
+          vscode.window.showInformationMessage(`AI Response: ${response}`);
+        } catch (error) {
+          logger.error("Error executing command", error as Error);
+          vscode.window.showErrorMessage(
+            "An error occurred while executing the command."
+          );
         }
-      );
+      }
+    );
 
-      // Set auth token
-      apiClient.setAuthToken(data.token);
-
-      this.logger.info("User logged in successfully:", data.user);
-      return data.user;
-    } catch (error) {
-      this.logger.error("Login failed:", error);
-      throw error;
-    }
-  }
-
-  async fetchMessages(): Promise<Message[]> {
-    try {
-      this.logger.info("Fetching messages...");
-      const messages = await this.dataService.getMessages();
-      this.logger.info("Messages fetched successfully:", messages.length);
-      return messages;
-    } catch (error) {
-      this.logger.error("Failed to fetch messages:", error);
-      throw error;
-    }
-  }
-
-  async sendMessage(content: string): Promise<Message> {
-    try {
-      this.logger.info("Sending message...");
-      const message = await this.dataService.sendMessage(content);
-      this.logger.info("Message sent successfully:", message.id);
-      return message;
-    } catch (error) {
-      this.logger.error("Failed to send message:", error);
-      throw error;
-    }
-  }
-
-  async logout(): Promise<void> {
-    try {
-      this.logger.info("Logging out...");
-
-      // Clear auth token
-      apiClient.clearAuthToken();
-
-      this.logger.info("Logged out successfully.");
-    } catch (error) {
-      this.logger.error("Logout failed:", error);
-      throw error;
-    }
-  }
-
-  // Send query to AI
-  async sendAIQuery(
-    query: string,
-    projectId: string,
-    roleId: string
-  ): Promise<any> {
-    try {
-      this.logger.info("Sending AI query...", { query, projectId, roleId });
-      const result = await this.dataService.sendQuery(query, projectId, roleId);
-      this.logger.info("AI query completed successfully");
-      return result;
-    } catch (error) {
-      this.logger.error("Failed to send AI query:", error);
-      throw error;
-    }
+    context.subscriptions.push(disposable);
   }
 }
-
-// Export singleton instance
-const appController = new AppController();
-
-export default appController;
-export { AppController };

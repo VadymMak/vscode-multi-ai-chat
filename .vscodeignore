@@ -1,14 +1,53 @@
-.vscode/**
-.vscode-test/**
-out/**
-node_modules/**
-src/**
-.gitignore
-.yarnrc
+# Exclude node_modules and build artifacts
+node_modules
+dist
+out
+build
+
+# Exclude test and coverage directories
+test
+coverage
+
+# Exclude configuration files
+.vscode
+.vscode-test
+
+# Exclude source files
+src/
+webview-ui/src/
+
+# Exclude TypeScript declaration files
+*.d.ts
+
+# Exclude logs and temporary files
+*.log
+*.tmp
+
+# Exclude package lock files
+package-lock.json
+yarn.lock
+
+# Exclude other unnecessary files
+*.map
+*.bak
+*.swp
+*.swo
+
+# Exclude documentation and markdown files
+*.md
+docs/
+
+# Exclude specific config files not needed in the package
+tsconfig.json
+tsconfig.app.json
+tsconfig.node.json
 webpack.config.js
-vsc-extension-quickstart.md
-**/tsconfig.json
-**/eslint.config.mjs
-**/*.map
-**/*.ts
-**/.vscode-test.*
+vite.config.ts
+
+# Exclude static assets
+public/
+
+# Exclude environment files
+.env
+.env.local
+.env.*.local

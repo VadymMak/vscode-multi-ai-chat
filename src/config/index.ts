@@ -1,46 +1,32 @@
-import { Config } from "../types/index";
-import { API_BASE_URL, DEFAULT_MODELS } from "../constants";
+import { AppConfig } from "../types/index";
+import { ENVIRONMENT, DEFAULT_SETTINGS } from "../constants";
 
-// Environment configuration interface
-interface EnvironmentConfig {
-  apiUrl: string;
-  defaultModels: string[];
-  environment: "development" | "production" | "test";
-}
-
-// Function to load environment configuration
-const loadEnvironmentConfig = (): EnvironmentConfig => {
-  // Determine the environment
-  const environment =
-    (process.env.NODE_ENV as "development" | "production" | "test") ||
-    "development";
-
-  // Load configuration based on the environment
-  switch (environment) {
-    case "development":
-      return {
-        apiUrl: `${API_BASE_URL}/dev`,
-        defaultModels: DEFAULT_MODELS,
-        environment,
-      };
-    case "production":
-      return {
-        apiUrl: `${API_BASE_URL}/prod`,
-        defaultModels: DEFAULT_MODELS,
-        environment,
-      };
-    case "test":
-      return {
-        apiUrl: `${API_BASE_URL}/test`,
-        defaultModels: DEFAULT_MODELS,
-        environment,
-      };
-    default:
-      throw new Error(`Unknown environment: ${environment}`);
-  }
+// Configuration settings for the application
+// Configuration settings for the application
+const config: AppConfig = {
+  environment: process.env.NODE_ENV || ENVIRONMENT.DEVELOPMENT,
+  apiBaseUrl: process.env.API_BASE_URL || DEFAULT_SETTINGS.API_BASE_URL,
+  logLevel: DEFAULT_SETTINGS.LOG_LEVEL, // ✅ ПРОСТО используй из настроек
+  maxRetries: 3,
+  featureFlags: {
+    enableNewFeature: process.env.ENABLE_NEW_FEATURE === "true",
+  },
 };
 
-// Export the configuration as a singleton
-const config: EnvironmentConfig = loadEnvironmentConfig();
+// Function to get a configuration value by key
+export function getConfigValue<T extends keyof AppConfig>(
+  key: T
+): AppConfig[T] {
+  return config[key];
+}
 
+// Function to update a configuration value
+export function setConfigValue<T extends keyof AppConfig>(
+  key: T,
+  value: AppConfig[T]
+): void {
+  config[key] = value;
+}
+
+// Export the configuration object
 export default config;

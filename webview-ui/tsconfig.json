@@ -1,18 +1,35 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "strict": true
+    "target": "ESNext", // Use the latest ECMAScript features
+    "module": "ESNext", // Use ESNext module system
+    "lib": ["DOM", "DOM.Iterable", "ESNext"], // Include necessary libraries
+    "jsx": "react-jsx", // Use the new JSX transform
+    "strict": true, // Enable all strict type-checking options
+    "esModuleInterop": true, // Enables emit interoperability between CommonJS and ES Modules
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true, // Disallow inconsistently-cased references to the same file
+    "moduleResolution": "node", // Use Node.js module resolution
+    "resolveJsonModule": true, // Allow importing .json files
+    "isolatedModules": true, // Ensure each file can be safely transpiled without relying on other imports
+    "noEmit": true, // Do not emit output
+    "incremental": true, // Enable incremental compilation
+    "baseUrl": ".", // Base directory to resolve non-relative module names
+    "paths": {
+      "@src/*": ["src/*"], // Path alias for source files
+      "@webview/*": ["webview-ui/src/*"] // Path alias for webview files
+    }
   },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": [
+    "src", // Include the source directory
+    "webview-ui/src" // Include the webview UI source directory
+  ],
+  "exclude": [
+    "node_modules", // Exclude node_modules
+    "dist", // Exclude build outputs
+    "build" // Exclude build outputs
+  ],
+  "references": [
+    { "path": "./tsconfig.node.json" }, // Reference Node-specific config
+    { "path": "./tsconfig.app.json" } // Reference App-specific config
+  ]
 }

@@ -1,53 +1,28 @@
-// src/extension.ts
-
 import * as vscode from "vscode";
-import appController from "./controllers/appController";
+import { AppController } from "./controllers/appController";
+import { MainPanel } from "./panels/mainPanel"; // ✅ ДОБАВЬ
 import logger from "./utils/logger";
 
-// This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
-  logger.info('Extension "multi-ai-chat" is now active!');
+  logger.info("Activating the VS Code Multi AI Chat extension.");
 
-  // Initialize the app controller
-  appController.initialize().catch((error: any) => {
-    logger.error("Failed to initialize app controller:", error);
-  });
+  // Initialize controller
+  const appController = AppController.getInstance();
+  appController.initialize(context);
 
-  // Register the command to open chat panel
-  const openChatCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.openChat",
+  // ✅ ДОБАВЬ регистрацию команды openMainPanel:
+  const openPanelCommand = vscode.commands.registerCommand(
+    "vscode-multi-ai-chat.openMainPanel",
     () => {
-      try {
-        // TODO: Create main panel when we implement it
-        vscode.window.showInformationMessage(
-          "Multi-AI Chat panel will open here!"
-        );
-        logger.info("Open chat command executed");
-      } catch (error) {
-        logger.error("Failed to open chat panel:", error);
-        vscode.window.showErrorMessage(
-          "Failed to open chat panel. Check logs for details."
-        );
-      }
+      MainPanel.createOrShow(context.extensionUri);
     }
   );
 
-  context.subscriptions.push(openChatCommand);
+  context.subscriptions.push(openPanelCommand);
 
-  // Register hello world command (from template)
-  const helloWorldCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.helloWorld",
-    () => {
-      vscode.window.showInformationMessage("Hello World from Multi-AI Chat!");
-    }
-  );
-
-  context.subscriptions.push(helloWorldCommand);
-
-  logger.info("Extension commands registered successfully");
+  logger.info("VS Code Multi AI Chat extension activated successfully.");
 }
 
-// This method is called when your extension is deactivated
 export function deactivate() {
-  logger.info('Extension "multi-ai-chat" is now deactivated.');
+  logger.info("Deactivating the VS Code Multi AI Chat extension.");
 }

@@ -1,71 +1,121 @@
-# multi-ai-chat README
+# VSCode Multi-AI Chat Extension
 
-This is the README for your extension "multi-ai-chat". After writing up a brief description, we recommend including the following sections.
+Welcome to the VSCode Multi-AI Chat Extension! This project is designed to integrate multiple AI chat functionalities directly into your Visual Studio Code environment. It leverages TypeScript, React, Node.js, the VS Code API, Vite, and Webpack to provide a seamless and efficient experience.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- **Multi-AI Integration**: Connect with various AI providers for diverse chat capabilities.
+- **Authentication Management**: Secure access with a robust authentication system.
+- **Customizable UI**: Tailor the chat interface to your preferences.
+- **Real-time Communication**: Engage in live chat sessions with AI models.
+- **VS Code Panel Integration**: Access the chat directly from a VS Code panel.
 
-For example if there is an image subfolder under your extension project workspace:
+## Getting Started
 
-\!\[feature X\]\(images/feature-x.png\)
+### Prerequisites
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- **Node.js**: Ensure you have Node.js installed (version 18.x or later).
+- **VS Code**: Install Visual Studio Code.
 
-## Requirements
+### Installation
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+1. **Clone the Repository**:
 
-## Extension Settings
+   ```bash
+   git clone https://github.com/yourusername/vscode-multi-ai-chat.git
+   cd vscode-multi-ai-chat
+   ```
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+2. **Install Dependencies**:
 
-For example:
+   ```bash
+   npm install
+   ```
 
-This extension contributes the following settings:
+3. **Compile the Project**:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+   ```bash
+   npm run compile
+   ```
 
-## Known Issues
+4. **Build the Webview**:
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+   ```bash
+   npm run build:webview
+   ```
 
-## Release Notes
+5. **Package the Extension**:
 
-Users appreciate release notes as you update your extension.
+   ```bash
+   npm run package
+   ```
 
-### 1.0.0
+6. **Run Tests**:
+   ```bash
+   npm test
+   ```
 
-Initial release of ...
+### Usage
 
-### 1.0.1
+- **Launch the Extension**: Open the project in VS Code and press `F5` to start the extension in a new VS Code window.
+- **Open the Chat Panel**: Use the command palette (`Ctrl+Shift+P` or `Cmd+Shift+P` on macOS) and search for "Open AI Chat Panel" to start interacting with the AI.
 
-Fixed issue #.
+## Project Structure
 
-### 1.1.0
+The project is organized into several groups, each serving a specific purpose:
 
-Added features X, Y, and Z.
+- **Foundation**: Core types, error handling, constants, configuration, and utilities.
+- **Core Logic**: Models, authentication, API client, AI provider, and data services.
+- **Integration**: Controllers, panels, and the extension entry point.
+- **UI Foundation**: Frontend types, utilities, and API services.
+- **UI Components**: React components and hooks for the user interface.
+- **Styling**: Global and application-specific styles.
+- **Webview Configuration**: Setup for the frontend using Vite.
+- **Root Configuration**: Overall project setup and build configurations.
+- **Tooling**: Development tools and ignore rules.
+- **Documentation**: Project documentation and setup instructions.
 
----
+## Development
 
-## Following extension guidelines
+### Building
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+- **Development Build**:
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+  ```bash
+  npm run build:dev
+  ```
 
-## Working with Markdown
+- **Production Build**:
+  ```bash
+  npm run build
+  ```
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+### Testing
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+- **Run Unit Tests**:
+  ```bash
+  npm test
+  ```
 
-## For more information
+### Linting
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+- **Run Linter**:
+  ```bash
+  npm run lint
+  ```
 
-**Enjoy!**
+## Contributing
+
+Contributions are welcome! Please fork the repository and submit a pull request with your changes. Ensure that your code adheres to the project's coding standards and passes all tests.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- **VS Code API**: For providing the platform to build this extension.
+- **OpenAI**: For the AI models and APIs used in this project.
+- **Community Contributors**: For their valuable input and feedback.
+
+For more information, please refer to the official [documentation](https://code.visualstudio.com/api) for developing VS Code extensions.

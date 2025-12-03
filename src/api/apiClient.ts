@@ -1,136 +1,121 @@
-// src/api/apiClient.ts
+// src/api/apiClient.ts - ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ
 
 import axios, {
   AxiosInstance,
-  InternalAxiosRequestConfig,
   AxiosResponse,
+  InternalAxiosRequestConfig,
 } from "axios";
-import { API_BASE_URL } from "../constants";
-import { Config, ILogger } from "../types/index";
+import config from "../config";
+import AuthManager from "../auth/authManager";
+import { APIError } from "../errors";
 import logger from "../utils/logger";
+import { APIResponse, DataRequest } from "../types/index";
 
-// Define the API client class
-class ApiClient {
-  private axiosInstance: AxiosInstance;
-  private logger: ILogger;
+// Create an Axios instance with default configuration
+const apiClient: AxiosInstance = axios.create({
+  baseURL: config.apiBaseUrl,
+  timeout: config.apiTimeout || 30000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-  constructor(config: Config, loggerInstance: ILogger) {
-    this.logger = loggerInstance;
-
-    // Initialize axios instance with base URL and interceptors
-    this.axiosInstance = axios.create({
-      baseURL: API_BASE_URL,
-      timeout: config.apiTimeout || 30000,
-    });
-
-    this.initializeInterceptors();
-  }
-
-  // Set up request and response interceptors
-  private initializeInterceptors() {
-    this.axiosInstance.interceptors.request.use(
-      (config: InternalAxiosRequestConfig) => {
-        // Token is already set in headers, just log the request
-        this.logger.debug(
-          `API Request: ${config.method?.toUpperCase()} ${config.url}`
-        );
-        return config;
-      },
-      (error: any) => {
-        this.logger.error("Request error:", error);
-        return Promise.reject(error);
+// Request interceptor to add authentication token
+// Request interceptor to add authentication token
+apiClient.interceptors.request.use(
+  async (
+    config: InternalAxiosRequestConfig
+  ): Promise<InternalAxiosRequestConfig> => {
+    try {
+      const token = await AuthManager.getInstance().getToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
       }
-    );
-
-    this.axiosInstance.interceptors.response.use(
-      (response: AxiosResponse) => {
-        this.logger.debug(
-          `API Response: ${response.status} ${response.config.url}`
-        );
-        return response;
-      },
-      (error: any) => {
-        this.logger.error("Response error:", error);
-
-        // Handle specific error codes (e.g., unauthorized)
-        if (error.response?.status === 401) {
-          this.logger.warn("Unauthorized access - token may be invalid");
-        }
-
-        return Promise.reject(error);
-      }
-    );
-  }
-
-  // Generic GET request method
-  public async get<T>(url: string, config?: any): Promise<T> {
-    try {
-      const response = await this.axiosInstance.get<T>(url, config);
-      return response.data;
+      return config;
     } catch (error) {
-      this.logger.error("GET request failed:", error);
-      throw error;
+      logger.error("Error in request interceptor", error as Error);
+      throw new APIError("Failed to attach authentication token", 500);
+    }
+  },
+  (error) => {
+    logger.error("Request error", error as Error);
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor to handle responses and errors
+apiClient.interceptors.response.use(
+  (response: AxiosResponse): AxiosResponse => {
+    return response;
+  },
+  (error) => {
+    if (error.response) {
+      logger.error("API response error", error.response);
+      throw new APIError(
+        `API Error: ${error.response.status} - ${error.response.statusText}`,
+        error.response.status
+      );
+    } else if (error.request) {
+      logger.error("No response received", error.request);
+      throw new APIError("No response received from API", 503);
+    } else {
+      logger.error("Error in setting up request", error);
+      throw new APIError("Error in setting up API request", 500);
     }
   }
+);
 
-  // Generic POST request method
-  public async post<T>(url: string, data?: any): Promise<T> {
-    try {
-      const response = await this.axiosInstance.post<T>(url, data);
-      return response.data;
-    } catch (error) {
-      this.logger.error("POST request failed:", error);
-      throw error;
-    }
+// Function to make a GET request
+export const get = async (
+  url: string,
+  params?: DataRequest
+): Promise<APIResponse> => {
+  try {
+    const response = await apiClient.get<APIResponse>(url, { params });
+    return response.data;
+  } catch (error) {
+    logger.error("GET request failed", error as Error);
+    throw error;
   }
-
-  // Generic PUT request method
-  public async put<T>(url: string, data?: any): Promise<T> {
-    try {
-      const response = await this.axiosInstance.put<T>(url, data);
-      return response.data;
-    } catch (error) {
-      this.logger.error("PUT request failed:", error);
-      throw error;
-    }
-  }
-
-  // Generic DELETE request method
-  public async delete<T>(url: string): Promise<T> {
-    try {
-      const response = await this.axiosInstance.delete<T>(url);
-      return response.data;
-    } catch (error) {
-      this.logger.error("DELETE request failed:", error);
-      throw error;
-    }
-  }
-
-  // ✅ ADD THESE TWO METHODS - This is what's missing!
-
-  // Set authorization token
-  public setAuthToken(token: string): void {
-    this.axiosInstance.defaults.headers.common[
-      "Authorization"
-    ] = `Bearer ${token}`;
-    this.logger.info("Auth token set");
-  }
-
-  // Clear authorization token
-  public clearAuthToken(): void {
-    delete this.axiosInstance.defaults.headers.common["Authorization"];
-    this.logger.info("Auth token cleared");
-  }
-}
-
-// Export singleton instance
-const config: Config = {
-  apiBaseUrl: API_BASE_URL,
-  defaultModel: "gpt-4o",
-  apiTimeout: 30000,
 };
 
-const apiClient = new ApiClient(config, logger);
+// Function to make a POST request
+export const post = async (
+  url: string,
+  data: DataRequest
+): Promise<APIResponse> => {
+  try {
+    const response = await apiClient.post<APIResponse>(url, data);
+    return response.data;
+  } catch (error) {
+    logger.error("POST request failed", error as Error);
+    throw error;
+  }
+};
+
+// Function to make a PUT request
+export const put = async (
+  url: string,
+  data: DataRequest
+): Promise<APIResponse> => {
+  try {
+    const response = await apiClient.put<APIResponse>(url, data);
+    return response.data;
+  } catch (error) {
+    logger.error("PUT request failed", error as Error);
+    throw error;
+  }
+};
+
+// Function to make a DELETE request
+export const remove = async (url: string): Promise<APIResponse> => {
+  try {
+    const response = await apiClient.delete<APIResponse>(url);
+    return response.data;
+  } catch (error) {
+    logger.error("DELETE request failed", error as Error);
+    throw error;
+  }
+};
 
 export default apiClient;
-export { ApiClient };

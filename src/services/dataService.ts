@@ -1,114 +1,60 @@
-// src/services/dataService.ts
+// src/services/dataService.ts - ИСПРАВЛЕННЫЙ
 
-// REMOVE these two lines:
-// import { APIResponse, DataRequest, IAIProvider, ILogger } from "../types/index";
-// import { APIResponse, DataRequest, IAIProvider, ILogger, Message } from '../types/index';
+import logger from "../utils/logger"; // ✅
+import apiClient from "../api/apiClient"; // ✅
+import AuthManager from "../auth/authManager"; // ✅
+import AIProvider from "../providers/aiProvider"; // ✅
+import { APIError } from "../errors"; // ✅
+import { APIResponse, DataRequest } from "../types"; // ✅
 
-// REPLACE with this ONE line:
-import {
-  APIResponse,
-  DataRequest,
-  IAIProvider,
-  ILogger,
-  Message,
-} from "../types/index";
-import { API_BASE_URL } from "../constants";
-import apiClient from "../api/apiClient";
-import aiProviderService from "../providers/aiProvider";
-import logger from "../utils/logger";
+interface IDataService {
+  fetchData: (endpoint: string) => Promise<any[]>;
+  saveData: (data: any) => Promise<void>;
+  initialize: () => Promise<void>;
+}
 
-// DataService class to handle data operations
-class DataService {
-  private aiProvider: IAIProvider;
-  private logger: ILogger;
+class DataService implements IDataService {
+  private static instance: DataService;
+  private authManager: AuthManager;
+  private aiProvider: AIProvider;
 
-  constructor(aiProvider: IAIProvider, loggerInstance: ILogger) {
-    this.aiProvider = aiProvider;
-    this.logger = loggerInstance;
+  private constructor() {
+    this.authManager = AuthManager.getInstance();
+    this.aiProvider = new AIProvider();
   }
 
-  // Fetch data from the API
-  async fetchData(request: DataRequest): Promise<APIResponse> {
+  public static getInstance(): DataService {
+    if (!DataService.instance) {
+      DataService.instance = new DataService();
+    }
+    return DataService.instance;
+  }
+
+  async initialize(): Promise<void> {
+    logger.info("DataService initialized");
+  }
+
+  async fetchData(endpoint: string): Promise<any[]> {
     try {
-      this.logger.info("Fetching data from API", request);
-      const data = await apiClient.get<APIResponse>("/data", {
-        params: request,
-      });
-      this.logger.info("Data fetched successfully", data);
-      return data;
+      logger.info(`Fetching data from: ${endpoint}`);
+      const response = await apiClient.get(endpoint);
+      return response.data || [];
     } catch (error) {
-      this.logger.error("Error fetching data", error);
-      throw new Error("Failed to fetch data");
+      logger.error(`Error fetching data`, error as Error);
+      throw new APIError("Error fetching data", 500);
     }
   }
 
-  // Get messages
-  async getMessages(): Promise<Message[]> {
+  async saveData(data: any): Promise<void> {
     try {
-      this.logger.info("Fetching messages from API");
-      const data = await apiClient.get<{ messages: Message[] }>("/messages");
-      this.logger.info("Messages fetched successfully");
-      return data.messages;
+      logger.info(`Saving data`);
+      await apiClient.post("/data", data);
+      logger.info("Data saved successfully");
     } catch (error) {
-      this.logger.error("Error fetching messages", error);
-      throw new Error("Failed to fetch messages");
-    }
-  }
-
-  // Send message
-  async sendMessage(content: string): Promise<Message> {
-    try {
-      this.logger.info("Sending message to API", { content });
-      const data = await apiClient.post<Message>("/messages", { content });
-      this.logger.info("Message sent successfully", data);
-      return data;
-    } catch (error) {
-      this.logger.error("Error sending message", error);
-      throw new Error("Failed to send message");
-    }
-  }
-
-  // Process data using AI provider
-  async processData(input: string): Promise<string> {
-    try {
-      this.logger.info("Processing data with AI provider", input);
-      const result = await this.aiProvider.sendMessageToAI(input, "gpt-4o");
-      this.logger.info("Data processed successfully", result);
-      return result;
-    } catch (error) {
-      this.logger.error("Error processing data", error);
-      throw new Error("Failed to process data");
-    }
-  }
-
-  // Send query to Multi-AI Chat backend
-  async sendQuery(
-    query: string,
-    projectId: string,
-    roleId: string
-  ): Promise<any> {
-    try {
-      this.logger.info("Sending query to backend", {
-        query,
-        projectId,
-        roleId,
-      });
-      const data = await apiClient.post<any>("/ask", {
-        query,
-        project_id: projectId,
-        role_id: roleId,
-      });
-      this.logger.info("Query sent successfully", data);
-      return data;
-    } catch (error) {
-      this.logger.error("Error sending query", error);
-      throw new Error("Failed to send query");
+      logger.error(`Error saving data`, error as Error);
+      throw new APIError("Error saving data", 500);
     }
   }
 }
 
-// Create singleton instance
-const dataService = new DataService(aiProviderService, logger);
-
-export default dataService;
-export { DataService };
+export default DataService;

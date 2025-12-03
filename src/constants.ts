@@ -1,22 +1,52 @@
-import { Config } from "./types";
+// src/constants.ts - ИСПРАВЛЕННЫЙ
 
-// Define application constants
-export const API_BASE_URL: string = "https://api.example.com";
-export const DEFAULT_MODELS: string[] = ["gpt-3", "gpt-4"];
+import { AppConfig, LogLevel } from "./types/index"; // ✅ Правильный импорт
 
-// Define environment-specific configurations
-export const ENV_CONFIG: Record<string, Config> = {
-  development: {
-    apiUrl: `${API_BASE_URL}/dev`,
-    loggingEnabled: true,
-  },
-  production: {
-    apiUrl: `${API_BASE_URL}/prod`,
-    loggingEnabled: false,
-  },
+export const APP_NAME = "VSCode Multi AI Chat";
+export const APP_VERSION = "1.0.0";
+
+export enum UserRole {
+  ADMIN = "admin",
+  USER = "user",
+  GUEST = "guest",
+}
+
+// ❌ УДАЛИ! LogLevel уже в types/index.ts
+// export enum LogLevel { ... }
+
+export enum Environment {
+  DEVELOPMENT = "development",
+  PRODUCTION = "production",
+  TEST = "test",
+}
+
+export const DEFAULT_CONFIG: AppConfig = {
+  environment: Environment.DEVELOPMENT,
+  logLevel: LogLevel.INFO,
+  apiBaseUrl: "http://localhost:3000/api",
+  maxRetries: 3,
 };
 
-// Export a function to get the current environment configuration
-export const getConfig = (env: string): Config => {
-  return ENV_CONFIG[env] || ENV_CONFIG["development"];
+export const ERROR_MESSAGES = {
+  NETWORK_ERROR: "Network error, please try again later.",
+  AUTHENTICATION_FAILED:
+    "Authentication failed, please check your credentials.",
+  UNKNOWN_ERROR: "An unknown error occurred.",
+};
+
+export const SUCCESS_MESSAGES = {
+  LOGIN_SUCCESS: "Successfully logged in.",
+  DATA_FETCH_SUCCESS: "Data fetched successfully.",
+};
+
+export const TIMEOUTS = {
+  API_REQUEST: 5000,
+  USER_INACTIVITY: 300000,
+};
+
+export const ENVIRONMENT = Environment; // Alias для Environment enum
+
+export const DEFAULT_SETTINGS = {
+  API_BASE_URL: "http://localhost:3000/api",
+  LOG_LEVEL: LogLevel.INFO,
 };

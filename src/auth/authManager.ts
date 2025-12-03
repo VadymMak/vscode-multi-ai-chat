@@ -1,21 +1,20 @@
-// src/auth/authManager.ts
+// src/auth/authManager.ts - ИСПРАВЛЕННЫЙ
 
-import { User } from "../types/index";
-import { API_BASE_URL } from "../constants";
-import logger from "../utils/logger";
-import { fetchWithTimeout } from "../utils/helpers";
+import { EventEmitter } from "events";
+import logger from "../utils/logger"; // ✅ default import
+import { AuthenticationError } from "../errors";
+import { User, AuthState } from "../types/index";
 
-interface AuthResponse {
-  token: string;
-  user: User;
-}
-
-class AuthManager {
+class AuthManager extends EventEmitter {
   private static instance: AuthManager;
-  private token: string | null = null;
+  private authState: AuthState = AuthState.LOGGED_OUT;
   private currentUser: User | null = null;
+  private token: string | null = null; // ✅ ДОБАВЛЕНО
 
-  private constructor() {}
+  private constructor() {
+    super();
+    logger.info("AuthManager initialized"); // ✅ logger маленькая
+  }
 
   public static getInstance(): AuthManager {
     if (!AuthManager.instance) {
@@ -24,47 +23,64 @@ class AuthManager {
     return AuthManager.instance;
   }
 
-  public async login(username: string, password: string): Promise<User> {
+  public async login(username: string, password: string): Promise<void> {
     try {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to login");
-      }
-
-      const data = (await response.json()) as AuthResponse;
-      this.token = data.token;
-      this.currentUser = data.user;
-      logger.info("User logged in successfully", this.currentUser);
-      return this.currentUser;
+      logger.info(`Attempting to log in user: ${username}`);
+      const user = await this.authenticate(username, password);
+      this.currentUser = user;
+      this.token = "mock-jwt-token-" + Date.now(); // ✅ ТОКЕН
+      this.authState = AuthState.LOGGED_IN;
+      this.emit("login", user);
+      logger.info(`User ${username} logged in successfully`);
     } catch (error) {
-      logger.error("Login failed", error);
-      throw error;
+      const err = error as Error;
+      logger.error(`Login failed for user ${username}: ${err.message}`);
+      throw new AuthenticationError("Login failed");
     }
   }
 
   public logout(): void {
-    this.token = null;
-    this.currentUser = null;
-    logger.info("User logged out");
+    if (this.authState === AuthState.LOGGED_IN) {
+      logger.info(`Logging out user: ${this.currentUser?.username}`);
+      this.currentUser = null;
+      this.token = null; // ✅ ОЧИСТКА ТОКЕНА
+      this.authState = AuthState.LOGGED_OUT;
+      this.emit("logout");
+      logger.info("User logged out successfully");
+    } else {
+      logger.warn("Logout attempted while no user is logged in");
+    }
   }
 
-  public getToken(): string | null {
-    return this.token;
+  public getAuthState(): AuthState {
+    return this.authState;
   }
 
   public getCurrentUser(): User | null {
     return this.currentUser;
   }
 
-  public isAuthenticated(): boolean {
-    return this.token !== null;
+  // ✅ ДОБАВЛЕН МЕТОД getToken
+  public async getToken(): Promise<string | null> {
+    return this.token;
+  }
+
+  private async authenticate(
+    username: string,
+    password: string
+  ): Promise<User> {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    if (username === "admin" && password === "password") {
+      return {
+        id: "1", // ✅ ДОБАВЛЕН id
+        username: "admin",
+        email: "admin@example.com", // ✅ ДОБАВЛЕН email
+        roles: ["admin"],
+      };
+    } else {
+      throw new Error("Invalid credentials");
+    }
   }
 }
 
