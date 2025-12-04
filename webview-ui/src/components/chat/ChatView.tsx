@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Message } from "../../types/index";
 import { sendMessage } from "../../services/apiService";
 import "./ChatView.css";
@@ -6,34 +9,26 @@ import "./ChatView.css";
 const ChatView: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
-  const [loading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // useEffect(() => {
-  //   // Fetch chat history when component mounts
-  //   const loadChatHistory = async () => {
-  //     try {
-  //       setLoading(true);
-  //       const history = await fetchChatHistory();
-  //       setMessages(history);
-  //     } catch (error) {
-  //       const errorMessage =
-  //         error instanceof Error
-  //           ? error.message
-  //           : "Failed to load chat history.";
-  //       setError(errorMessage);
-  //     } finally {
-  //       setLoading(false);
-  //     }
-  //   };
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  //   loadChatHistory();
-  // }, []);
+  const handleCopy = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      console.log("✅ Copied!");
+    } catch (err) {
+      console.error("❌ Failed to copy:", err);
+    }
+  };
 
   const handleSend = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isLoading) return;
 
-    // 1. Create user message
     const userMessage: Message = {
       id: Date.now().toString(),
       content: inputValue,
@@ -41,24 +36,21 @@ const ChatView: React.FC = () => {
       timestamp: new Date().toISOString(),
     };
 
-    // 2. Add to UI
     setMessages((prevMessages) => [...prevMessages, userMessage]);
     setInputValue("");
     setError(null);
+    setIsLoading(true);
 
     try {
-      // 3. Call API
       const response = await sendMessage(userMessage.content);
 
-      // 4. Create AI message with correct structure
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: response.message, // ✅ response.message, не response
+        content: response.message,
         sender: "ai",
         timestamp: new Date().toISOString(),
       };
 
-      // 5. Add AI response to UI
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
     } catch (err: unknown) {
       let errorMessage = "Failed to send message";
@@ -84,35 +76,93 @@ const ChatView: React.FC = () => {
       }
 
       setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
   return (
     <div className="chat-view">
       <div className="chat-messages">
-        {loading ? (
-          <div className="loading">Loading...</div>
-        ) : (
-          messages.map((message) => (
-            <div key={message.id} className={`message ${message.sender}`}>
-              <span className="content">{message.content}</span>
+        {messages.map((message) => (
+          <div key={message.id} className={`message ${message.sender}`}>
+            <div className="message-content">
+              {message.sender === "ai" ? (
+                <ReactMarkdown
+                  components={{
+                    code({ node, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || "");
+                      const isInline = !match;
+
+                      return isInline ? (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      ) : (
+                        <SyntaxHighlighter
+                          style={vscDarkPlus}
+                          language={match[1]}
+                          PreTag="div"
+                        >
+                          {String(children).replace(/\n$/, "")}
+                        </SyntaxHighlighter>
+                      );
+                    },
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              ) : (
+                <span className="content">{message.content}</span>
+              )}
+            </div>
+            <div className="message-footer">
               <span className="timestamp">
                 {new Date(message.timestamp).toLocaleTimeString()}
               </span>
+              {message.sender === "ai" && (
+                <button
+                  className="copy-button"
+                  onClick={() => handleCopy(message.content)}
+                  title="Copy message"
+                >
+                  📋
+                </button>
+              )}
             </div>
-          ))
+          </div>
+        ))}
+
+        {isLoading && (
+          <div className="message ai loading-message">
+            <div className="message-content">
+              <span className="loading-dots">AI is thinking</span>
+            </div>
+          </div>
         )}
+
         {error && <div className="error">{error}</div>}
+        <div ref={messagesEndRef} />
       </div>
+
       <div className="chat-input">
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          placeholder="Type a message..."
+          onKeyDown={handleKeyPress}
+          placeholder="Type a message... (Enter to send)"
+          disabled={isLoading}
         />
-        <button onClick={handleSend} disabled={loading}>
-          Send
+        <button onClick={handleSend} disabled={isLoading || !inputValue.trim()}>
+          {isLoading ? "..." : "Send"}
         </button>
       </div>
     </div>

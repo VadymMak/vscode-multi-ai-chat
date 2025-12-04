@@ -6,7 +6,7 @@ const API_BASE_URL = "https://multi-ai-chat-production.up.railway.app";
 // Create Axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -103,6 +103,9 @@ export const postData = async <T, U>(endpoint: string, data: U): Promise<T> => {
 // ✅ VS Code Chat Types
 export interface SendMessageRequest {
   message: string;
+  filePath?: string; // ← ДОБАВЬ
+  fileContent?: string; // ← ДОБАВЬ
+  selectedText?: string; // ← ДОБАВЬ
 }
 
 export interface SendMessageResponse {
@@ -111,14 +114,25 @@ export interface SendMessageResponse {
 
 // ✅ VS Code Chat Function (ЕДИНСТВЕННАЯ!)
 export const sendMessage = async (
-  message: string
+  message: string,
+  context?: {
+    filePath?: string;
+    fileContent?: string;
+    selectedText?: string;
+  }
 ): Promise<SendMessageResponse> => {
   try {
     console.log("🔧 sendMessage called with:", message);
+    console.log("🔧 sendMessage context:", context);
+
+    const requestData: SendMessageRequest = {
+      message,
+      ...context, // ← Spread context если есть
+    };
 
     const response = await apiClient.post<SendMessageResponse>(
       "/api/vscode/chat",
-      { message }
+      requestData
     );
 
     console.log("🔧 sendMessage response:", response.data);
