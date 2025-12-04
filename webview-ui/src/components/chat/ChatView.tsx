@@ -33,24 +33,56 @@ const ChatView: React.FC = () => {
   const handleSend = async () => {
     if (!inputValue.trim()) return;
 
-    const newMessage: Message = {
+    // 1. Create user message
+    const userMessage: Message = {
       id: Date.now().toString(),
       content: inputValue,
       sender: "user",
       timestamp: new Date().toISOString(),
     };
 
+    // 2. Add to UI
+    setMessages((prevMessages) => [...prevMessages, userMessage]);
+    setInputValue("");
+    setError(null);
+
     try {
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
-      setInputValue("");
-      const response = await sendMessage(newMessage.content);
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        { ...response, sender: "ai" },
-      ]);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to send message";
+      // 3. Call API
+      const response = await sendMessage(userMessage.content);
+
+      // 4. Create AI message with correct structure
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: response.message, // ✅ response.message, не response
+        sender: "ai",
+        timestamp: new Date().toISOString(),
+      };
+
+      // 5. Add AI response to UI
+      setMessages((prevMessages) => [...prevMessages, aiMessage]);
+    } catch (err: unknown) {
+      let errorMessage = "Failed to send message";
+
+      if (err && typeof err === "object") {
+        if (
+          "response" in err &&
+          err.response &&
+          typeof err.response === "object"
+        ) {
+          if (
+            "data" in err.response &&
+            err.response.data &&
+            typeof err.response.data === "object"
+          ) {
+            if ("detail" in err.response.data) {
+              errorMessage = String(err.response.data.detail);
+            }
+          }
+        } else if ("message" in err) {
+          errorMessage = String(err.message);
+        }
+      }
+
       setError(errorMessage);
     }
   };

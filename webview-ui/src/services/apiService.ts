@@ -1,5 +1,3 @@
-// webview-ui/src/services/apiService.ts
-
 import axios, { AxiosInstance } from "axios";
 
 // ✅ Railway backend URL
@@ -14,7 +12,7 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
-// ✅ ДОБАВЛЕНО: Store token
+// ✅ Store token
 let authToken: string | null = null;
 
 export function setAuthToken(token: string | null) {
@@ -22,7 +20,7 @@ export function setAuthToken(token: string | null) {
   console.log("🔧 setAuthToken called:", token ? "Token set" : "Token cleared");
 }
 
-// ✅ ДОБАВЛЕНО: Request interceptor to add token
+// ✅ Request interceptor to add token
 apiClient.interceptors.request.use(
   (config) => {
     if (authToken) {
@@ -58,7 +56,7 @@ export const apiService = {
       token: response.data.access_token,
     };
 
-    // ✅ ДОБАВЛЕНО: Save token
+    // Save token
     setAuthToken(result.token);
 
     console.log("🔧 apiService.login returning:", result);
@@ -68,7 +66,7 @@ export const apiService = {
 
   // Logout method
   logout: async () => {
-    // ✅ ДОБАВЛЕНО: Clear token
+    // Clear token
     setAuthToken(null);
     return { success: true };
   },
@@ -102,25 +100,31 @@ export const postData = async <T, U>(endpoint: string, data: U): Promise<T> => {
   return response.data;
 };
 
-// ✅ Chat functions
-export const fetchChatHistory = async () => {
-  try {
-    const response = await apiClient.get("/api/chat/history");
-    return response.data.messages || [];
-  } catch (error) {
-    console.error("Failed to fetch chat history:", error);
-    return [];
-  }
-};
+// ✅ VS Code Chat Types
+export interface SendMessageRequest {
+  message: string;
+}
 
-export const sendMessage = async (content: string) => {
+export interface SendMessageResponse {
+  message: string;
+}
+
+// ✅ VS Code Chat Function (ЕДИНСТВЕННАЯ!)
+export const sendMessage = async (
+  message: string
+): Promise<SendMessageResponse> => {
   try {
-    const response = await apiClient.post("/api/chat/send", {
-      content: content,
-    });
+    console.log("🔧 sendMessage called with:", message);
+
+    const response = await apiClient.post<SendMessageResponse>(
+      "/api/vscode/chat",
+      { message }
+    );
+
+    console.log("🔧 sendMessage response:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Failed to send message:", error);
+    console.error("❌ sendMessage error:", error);
     throw error;
   }
 };
