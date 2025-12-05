@@ -2,10 +2,11 @@ import React from "react";
 import { useAuth } from "./contexts/AuthContext";
 import LoginForm from "./components/auth/LoginForm";
 import ChatView from "./components/chat/ChatView";
+import ProjectSelector from "./components/ProjectSelector/ProjectSelector"; // ✅ NEW
 import "./App.css";
 
 const App: React.FC = () => {
-  const { authStatus, logout } = useAuth(); // ✅ убрали login - он не нужен
+  const { authStatus, logout } = useAuth();
   const isAuthenticated = authStatus === "authenticated";
 
   return (
@@ -18,6 +19,10 @@ const App: React.FC = () => {
           </button>
         )}
       </header>
+
+      {/* ✅ NEW: Project Selector */}
+      {isAuthenticated && <ProjectSelector />}
+
       <main className="app-main">
         {isAuthenticated ? (
           <ChatView />

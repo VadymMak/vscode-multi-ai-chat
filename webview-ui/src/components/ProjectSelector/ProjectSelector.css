@@ -1,0 +1,130 @@
+.project-selector {
+  display: flex;
+  flex-direction: column; /* ✅ Stack vertically */
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: #252526;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.selector-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selector-label {
+  font-size: 12px;
+  color: #888888;
+  white-space: nowrap;
+  width: 55px; /* ✅ Fixed label width */
+}
+
+.selector-dropdown {
+  flex: 1; /* ✅ Take remaining space */
+  padding: 6px 12px;
+  background-color: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.selector-dropdown:hover {
+  border-color: #007acc;
+}
+
+.selector-dropdown:focus {
+  border-color: #007acc;
+  box-shadow: 0 0 0 1px #007acc;
+}
+
+.selector-dropdown:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selector-dropdown option {
+  background-color: #252526;
+  color: #cccccc;
+  padding: 8px;
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+.selector-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 4px 10px;
+  background-color: rgba(14, 99, 156, 0.2);
+  border-radius: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #89d185;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  font-size: 11px;
+  color: #4fc3f7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* Responsive */
+@media (max-width: 500px) {
+  .project-selector {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .selector-dropdown {
+    width: 100%; /* ✅ Full width on mobile */
+  }
+
+  .selector-status {
+    margin-left: 0;
+  }
+}
+
+/* ✅ Project Assistant (read-only) */
+.project-assistant {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background-color: rgba(14, 99, 156, 0.2);
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+.assistant-icon {
+  font-size: 14px;
+}
+
+.assistant-name {
+  font-size: 12px;
+  color: #4fc3f7;
+}

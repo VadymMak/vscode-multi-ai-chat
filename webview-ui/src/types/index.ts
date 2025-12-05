@@ -60,3 +60,19 @@ export interface ApiError {
   status: number;
   statusText: string;
 }
+
+export interface Project {
+  id: number;
+  name: string;
+  description?: string;
+  created_at?: string;
+  git_url?: string;
+  role_id?: number;
+  assistant_name?: string;
+}
+
+export interface Role {
+  id: number;
+  name: string;
+  description?: string;
+}
