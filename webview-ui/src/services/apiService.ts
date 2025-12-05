@@ -1,86 +1,100 @@
-import axios, { AxiosInstance } from "axios";
+import { useAuthStore } from "../store/authStore";
+import { AuthResponse, CheckAuthResponse } from "../types";
+import { vscodeAPI } from "../utils/vscodeApi";
 
-// ✅ Railway backend URL
-const API_BASE_URL = "https://multi-ai-chat-production.up.railway.app";
+// ✅ Simple API Client using Extension as proxy
+let requestCounter = 0;
+const pendingRequests: Record<string, any> = {};
 
-// Create Axios instance
-const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 120000,
-  headers: {
-    "Content-Type": "application/json",
-  },
+// Listen for API responses from extension
+(globalThis as any).addEventListener("message", (event: any) => {
+  const message = event.data;
+
+  if (message.command === "apiResponse" && message.requestId) {
+    const pending = pendingRequests[message.requestId];
+    if (pending) {
+      if (message.response.success) {
+        pending.resolve(message.response.data);
+      } else {
+        pending.reject(
+          new Error(message.response.error || "API request failed")
+        );
+      }
+      delete pendingRequests[message.requestId];
+    }
+  }
 });
 
-// ✅ Store token
-let authToken: string | null = null;
+async function apiRequest(
+  method: string,
+  endpoint: string,
+  data?: any
+): Promise<any> {
+  const token = useAuthStore.getState().token;
+  const requestId = `req_${++requestCounter}_${Date.now()}`;
 
-export function setAuthToken(token: string | null) {
-  authToken = token;
-  console.log("🔧 setAuthToken called:", token ? "Token set" : "Token cleared");
-}
+  console.log(`🔄 [ApiClient] ${method} ${endpoint}`, { hasToken: !!token });
 
-// ✅ Request interceptor to add token
-apiClient.interceptors.request.use(
-  (config) => {
-    if (authToken) {
-      config.headers.Authorization = `Bearer ${authToken}`;
-      console.log("🔧 Request interceptor: Added token to", config.url);
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+  return new Promise((resolve, reject) => {
+    pendingRequests[requestId] = { resolve, reject };
 
-// ✅ API Service object
-export const apiService = {
-  // Login method
-  login: async (username: string, password: string) => {
-    const formData = new URLSearchParams();
-    formData.append("grant_type", "password");
-    formData.append("username", username);
-    formData.append("password", password);
-
-    const response = await apiClient.post("/api/auth/login", formData, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+    // Send request to extension
+    vscodeAPI.postMessage({
+      command: "apiRequest",
+      requestId,
+      data: {
+        method,
+        endpoint,
+        data,
+        token,
       },
     });
 
-    console.log("🔧 apiService.login response:", response.data);
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      if (pendingRequests[requestId]) {
+        delete pendingRequests[requestId];
+        reject(new Error("Request timeout"));
+      }
+    }, 30000);
+  });
+}
 
-    const result = {
-      user: response.data.user,
-      token: response.data.access_token,
+export const apiService = {
+  login: async (username: string, password: string): Promise<AuthResponse> => {
+    console.log("🔧 apiService.login called");
+
+    const response = await apiRequest("POST", "/auth/login", {
+      username,
+      password,
+    });
+
+    console.log("🔧 apiService.login response:", response);
+
+    // ✅ Save token to Zustand store
+    useAuthStore.getState().setToken(response.access_token);
+    console.log("💾 Token saved to Zustand store");
+
+    return {
+      user: response.user,
+      token: response.access_token,
     };
-
-    // Save token
-    setAuthToken(result.token);
-
-    console.log("🔧 apiService.login returning:", result);
-
-    return result;
   },
 
-  // Logout method
-  logout: async () => {
-    // Clear token
-    setAuthToken(null);
+  logout: async (): Promise<{ success: boolean }> => {
+    // ✅ Clear token from Zustand store
+    useAuthStore.getState().clearToken();
     return { success: true };
   },
 
-  // Check auth status
-  checkAuth: async () => {
+  checkAuth: async (): Promise<CheckAuthResponse> => {
     try {
-      const response = await apiClient.get("/api/auth/me");
+      const response = await apiRequest("GET", "/auth/me");
       return {
         isAuthenticated: true,
-        user: response.data,
+        user: response,
       };
     } catch (error) {
-      console.log(error);
       return {
         isAuthenticated: false,
         user: null,
@@ -89,56 +103,36 @@ export const apiService = {
   },
 };
 
-// Legacy exports
-export const fetchData = async <T>(endpoint: string): Promise<T> => {
-  const response = await apiClient.get<T>(endpoint);
-  return response.data;
-};
-
-export const postData = async <T, U>(endpoint: string, data: U): Promise<T> => {
-  const response = await apiClient.post<T>(endpoint, data);
-  return response.data;
-};
-
-// ✅ VS Code Chat Types
-export interface SendMessageRequest {
-  message: string;
-  filePath?: string; // ← ДОБАВЬ
-  fileContent?: string; // ← ДОБАВЬ
-  selectedText?: string; // ← ДОБАВЬ
-}
-
-export interface SendMessageResponse {
-  message: string;
-}
-
-// ✅ VS Code Chat Function (ЕДИНСТВЕННАЯ!)
+// ✅ sendMessage function for ChatView
 export const sendMessage = async (
   message: string,
-  context?: {
-    filePath?: string;
-    fileContent?: string;
-    selectedText?: string;
-  }
-): Promise<SendMessageResponse> => {
+  fileContext?: any
+): Promise<{ message: string }> => {
   try {
-    console.log("🔧 sendMessage called with:", message);
-    console.log("🔧 sendMessage context:", context);
+    console.log("📤 [apiService] Sending message:", message);
+    console.log("📁 [apiService] File context:", fileContext);
 
-    const requestData: SendMessageRequest = {
-      message,
-      ...context, // ← Spread context если есть
+    const response = await apiRequest("POST", "/ask", {
+      query: message,
+      project_id: 1,
+      role_id: 1,
+      file_path: fileContext?.filePath || null,
+      file_content: fileContext?.fileContent || null,
+      selected_text: fileContext?.selectedText || null,
+    });
+
+    console.log("✅ [apiService] Response received:", response);
+
+    return {
+      message: response.answer || response.response || "No response from AI",
     };
-
-    const response = await apiClient.post<SendMessageResponse>(
-      "/api/vscode/chat",
-      requestData
-    );
-
-    console.log("🔧 sendMessage response:", response.data);
-    return response.data;
   } catch (error) {
-    console.error("❌ sendMessage error:", error);
+    console.error("❌ [apiService] Send message error:", error);
+
+    if (error instanceof Error && error.message.includes("401")) {
+      useAuthStore.getState().clearToken();
+    }
+
     throw error;
   }
 };

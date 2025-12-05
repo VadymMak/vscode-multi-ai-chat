@@ -2,9 +2,10 @@
 
 // Frontend-specific type definitions for the webview UI
 
+// ✅ UPDATED: User interface для соответствия с backend
 export interface User {
-  id: string;
-  name: string;
+  id: number; // ✅ number, не string
+  username: string; // ✅ добавлено username
   email: string;
 }
 
@@ -35,10 +36,25 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-// ✅ ДОБАВЛЕНО: Auth Status type
-export type AuthStatus = "authenticated" | "authenticating" | "unauthenticated";
+// ✅ UPDATED: Auth Status type с "checking"
+export type AuthStatus =
+  | "checking"
+  | "authenticated"
+  | "authenticating"
+  | "unauthenticated";
 
-// ✅ ДОБАВЛЕНО: API Error type
+// ✅ ADDED: Auth Response types
+export interface AuthResponse {
+  user: User;
+  token: string;
+}
+
+export interface CheckAuthResponse {
+  isAuthenticated: boolean;
+  user: User | null;
+}
+
+// ✅ API Error type
 export interface ApiError {
   message: string;
   status: number;

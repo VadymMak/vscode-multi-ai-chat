@@ -1,74 +1,127 @@
 import { useState, useEffect } from "react";
 import { apiService } from "../services/apiService";
-import { AuthStatus, User } from "../types";
+import { vscodeAPI } from "../utils/vscodeApi";
+import { useAuthStore } from "../store/authStore";
+import { User, AuthStatus } from "../types"; // ✅ Import from types/index
 
-// Define the return type for the useAuth hook
-interface UseAuthReturn {
+export interface UseAuthReturn {
   user: User | null;
   authStatus: AuthStatus;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  checkAuth: () => Promise<void>;
 }
 
-// Custom hook for managing authentication state
 export function useAuth(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null);
-  const [authStatus, setAuthStatus] = useState<AuthStatus>("unauthenticated");
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("checking");
+  const clearToken = useAuthStore((state) => state.clearToken);
+  const token = useAuthStore((state) => state.token);
 
-  // Function to handle user login
-  // Function to handle user login
+  // ✅ Check auth ONLY if token exists
+  useEffect(() => {
+    const verifyToken = async () => {
+      if (token) {
+        console.log("🔍 Token exists, verifying with backend...");
+        try {
+          const result = await apiService.checkAuth();
+          if (result.isAuthenticated) {
+            setUser(result.user);
+            setAuthStatus("authenticated");
+            console.log("✅ Token verified, user authenticated");
+          } else {
+            console.log("❌ Token invalid, clearing...");
+            clearToken();
+            vscodeAPI.setState({ authToken: null });
+            vscodeAPI.postMessage({ command: "tokenUpdated", token: null });
+            setAuthStatus("unauthenticated");
+          }
+        } catch (error) {
+          console.error("❌ Token verification failed:", error);
+          clearToken();
+          vscodeAPI.setState({ authToken: null });
+          vscodeAPI.postMessage({ command: "tokenUpdated", token: null });
+          setAuthStatus("unauthenticated");
+        }
+      } else {
+        console.log("📭 No token found, showing login form");
+        setAuthStatus("unauthenticated");
+      }
+    };
+
+    verifyToken();
+  }, [token, clearToken]);
+
+  const checkAuth = async () => {
+    try {
+      const result = await apiService.checkAuth();
+      if (result.isAuthenticated) {
+        setUser(result.user);
+        setAuthStatus("authenticated");
+      } else {
+        setUser(null);
+        setAuthStatus("unauthenticated");
+      }
+    } catch (error) {
+      console.error("Check auth error:", error);
+      setUser(null);
+      setAuthStatus("unauthenticated");
+    }
+  };
+
   const login = async (username: string, password: string) => {
     try {
       console.log("🔧 useAuth.login START");
-      console.log("🔧 useAuth.login current authStatus:", authStatus);
-
       setAuthStatus("authenticating");
-      console.log("🔧 useAuth.login set authStatus to: authenticating");
 
       const response = await apiService.login(username, password);
       console.log("🔧 useAuth.login got response:", response);
 
       setUser(response.user);
-      console.log("🔧 useAuth.login set user:", response.user);
-
       setAuthStatus("authenticated");
-      console.log("🔧 useAuth.login set authStatus to: authenticated");
+
+      console.log("💾 Saving token to VS Code State");
+      vscodeAPI.setState({ authToken: response.token });
+
+      console.log("📤 Notifying extension about token");
+      vscodeAPI.postMessage({
+        command: "tokenUpdated",
+        token: response.token,
+      });
+
+      console.log("✅ Login successful!");
     } catch (error) {
-      console.error("🔧 useAuth.login ERROR:", error);
+      console.error("❌ Login error:", error);
       setAuthStatus("unauthenticated");
+      throw error;
     }
   };
 
-  // Function to handle user logout
   const logout = async () => {
     try {
+      console.log("🗑️ Token cleared from Zustand store");
       await apiService.logout();
       setUser(null);
       setAuthStatus("unauthenticated");
+
+      console.log("🗑️ Clearing token from VS Code State");
+      vscodeAPI.setState({ authToken: null });
+
+      console.log("📤 Notifying extension to clear token");
+      vscodeAPI.postMessage({
+        command: "tokenUpdated",
+        token: null,
+      });
     } catch (error) {
       console.error("Logout failed:", error);
     }
   };
 
-  // Effect to check authentication status on component mount
-  useEffect(() => {
-    const checkAuthStatus = async () => {
-      try {
-        const response = await apiService.checkAuth();
-        if (response.isAuthenticated) {
-          setUser(response.user);
-          setAuthStatus("authenticated");
-        } else {
-          setAuthStatus("unauthenticated");
-        }
-      } catch (error) {
-        console.error("Failed to check authentication status:", error);
-        setAuthStatus("unauthenticated");
-      }
-    };
-
-    checkAuthStatus();
-  }, []);
-
-  return { user, authStatus, login, logout };
+  return {
+    user,
+    authStatus,
+    login,
+    logout,
+    checkAuth,
+  };
 }

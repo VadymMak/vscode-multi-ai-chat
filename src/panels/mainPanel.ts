@@ -2,20 +2,28 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import logger from "../utils/logger";
+import { getFileContext } from "../utils/fileContext";
+import { ApiProxy } from "../services/apiProxy";
 
 export class MainPanel {
   public static currentPanel: MainPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
+  private readonly _context: vscode.ExtensionContext;
   private _disposables: vscode.Disposable[] = [];
+  private _isInitialized: boolean = false; // ✅ NEW: Track initialization
 
-  public static createOrShow(extensionUri: vscode.Uri) {
+  public static createOrShow(
+    extensionUri: vscode.Uri,
+    context: vscode.ExtensionContext
+  ) {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
 
     if (MainPanel.currentPanel) {
       MainPanel.currentPanel._panel.reveal(column);
+      MainPanel.currentPanel._sendStoredToken();
       return;
     }
 
@@ -32,37 +40,113 @@ export class MainPanel {
       }
     );
 
-    MainPanel.currentPanel = new MainPanel(panel, extensionUri);
+    MainPanel.currentPanel = new MainPanel(panel, extensionUri, context);
   }
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+  private constructor(
+    panel: vscode.WebviewPanel,
+    extensionUri: vscode.Uri,
+    context: vscode.ExtensionContext
+  ) {
     this._panel = panel;
     this._extensionUri = extensionUri;
-    this._update();
+    this._context = context;
+
+    // ✅ Only set HTML once during initialization
+    this._initializeWebview();
+
+    this._sendStoredToken();
 
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
+    // ✅ FIXED: Don't recreate HTML when panel becomes visible
     this._panel.onDidChangeViewState(
       (e) => {
         if (this._panel.visible) {
-          this._update();
+          // ✅ Only send token, DON'T update HTML!
+          this._sendStoredToken();
         }
       },
       null,
       this._disposables
     );
 
-    // ✅ Handle messages from webview
+    // Handle messages from webview
     this._panel.webview.onDidReceiveMessage(
       async (message) => {
         switch (message.command) {
           case "login":
             logger.info(`Login attempt: ${message.username}`);
-            // TODO: Handle login through AuthManager
             break;
+
+          case "tokenUpdated":
+            logger.info("🔑 Token received from webview");
+            if (message.token) {
+              await this._saveToken(message.token);
+              logger.info("💾 Token saved in extension storage");
+            } else {
+              // ✅ Handle logout - clear token
+              await this._clearToken();
+              logger.info("🗑️ Token cleared from extension storage");
+            }
+            break;
+
+          case "apiRequest":
+            logger.info(
+              `🔄 [MainPanel] API Proxy request: ${message.data.method} ${message.data.endpoint}`
+            );
+            try {
+              const response = await ApiProxy.request(message.data);
+
+              this._panel.webview.postMessage({
+                command: "apiResponse",
+                requestId: message.requestId,
+                response,
+              });
+            } catch (error) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              logger.error(`❌ [MainPanel] API Proxy error: ${errorMessage}`);
+
+              this._panel.webview.postMessage({
+                command: "apiResponse",
+                requestId: message.requestId,
+                response: {
+                  success: false,
+                  error: errorMessage,
+                },
+              });
+            }
+            break;
+
           case "sendMessage":
             logger.info(`Message from webview: ${message.text}`);
             break;
+
+          case "getFileContext":
+            logger.info("Webview requested file context");
+            try {
+              const context = getFileContext();
+              logger.info(
+                `Sending file context to webview: ${JSON.stringify(context)}`
+              );
+
+              this._panel.webview.postMessage({
+                command: "fileContext",
+                data: context,
+              });
+            } catch (error) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              logger.error(`Error getting file context: ${errorMessage}`);
+
+              this._panel.webview.postMessage({
+                command: "fileContext",
+                data: {},
+              });
+            }
+            break;
+
           case "alert":
             vscode.window.showErrorMessage(message.text);
             break;
@@ -71,6 +155,52 @@ export class MainPanel {
       null,
       this._disposables
     );
+  }
+
+  // ✅ NEW: Initialize webview only once
+  private _initializeWebview(): void {
+    if (this._isInitialized) {
+      return;
+    }
+
+    const webview = this._panel.webview;
+    this._panel.title = "Multi AI Chat";
+    this._panel.webview.html = this._getHtmlForWebview(webview);
+    this._isInitialized = true;
+
+    logger.info("🚀 Webview initialized");
+  }
+
+  private async _saveToken(token: string): Promise<void> {
+    await this._context.globalState.update("authToken", token);
+  }
+
+  // ✅ NEW: Clear token method
+  private async _clearToken(): Promise<void> {
+    await this._context.globalState.update("authToken", undefined);
+  }
+
+  private async _getToken(): Promise<string | undefined> {
+    return this._context.globalState.get<string>("authToken");
+  }
+
+  private async _sendStoredToken(): Promise<void> {
+    try {
+      const token = await this._getToken();
+      if (token) {
+        logger.info("📤 Sending stored token to webview");
+        this._panel.webview.postMessage({
+          command: "tokenUpdated",
+          token: token,
+        });
+      } else {
+        logger.info("📭 No stored token found");
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`Error sending token: ${errorMessage}`);
+    }
   }
 
   public dispose() {
@@ -85,21 +215,12 @@ export class MainPanel {
     }
   }
 
-  private _update() {
-    const webview = this._panel.webview;
-    this._panel.title = "Multi AI Chat";
-    this._panel.webview.html = this._getHtmlForWebview(webview);
-  }
-
   private _getHtmlForWebview(webview: vscode.Webview): string {
-    // ✅ Path to React build
     const distPath = path.join(this._extensionUri.fsPath, "webview-ui", "dist");
     const htmlPath = path.join(distPath, "index.html");
 
-    // ✅ Read the built HTML
     let html = fs.readFileSync(htmlPath, "utf8");
 
-    // ✅ Replace asset paths with webview URIs
     const assetPath = vscode.Uri.joinPath(
       this._extensionUri,
       "webview-ui",
@@ -108,11 +229,10 @@ export class MainPanel {
     );
     const assetUri = webview.asWebviewUri(assetPath);
 
-    // ✅ Replace /assets/ with webview URI
     html = html.replace(/\/assets\//g, `${assetUri.toString()}/`);
 
-    // ✅ Add CSP
     const nonce = getNonce();
+
     html = html.replace(
       "<head>",
       `<head>
@@ -124,7 +244,6 @@ export class MainPanel {
                      img-src ${webview.cspSource} https: data:;">`
     );
 
-    // ✅ Add nonce to scripts
     html = html.replace(/<script/g, `<script nonce="${nonce}"`);
 
     return html;

@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Message } from "../../types/index";
 import { sendMessage } from "../../services/apiService";
+import { vscodeAPI } from "../../utils/vscodeApi";
 import "./ChatView.css";
 
 const ChatView: React.FC = () => {
@@ -13,16 +14,37 @@ const ChatView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [fileContext, setFileContext] = useState<any>(null);
+  const [waitingForContext, setWaitingForContext] = useState<boolean>(false);
+
+  // ✅ REMOVED - Token now restored in main.tsx BEFORE app mount!
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ✅ Listen for file context only (token handled in main.tsx)
+  useEffect(() => {
+    const messageHandler = (event: MessageEvent) => {
+      const message = event.data;
+
+      if (message.command === "fileContext") {
+        console.log("📁 [ChatView] File context received:", message.data);
+        setFileContext(message.data);
+        setWaitingForContext(false);
+      }
+    };
+
+    window.addEventListener("message", messageHandler);
+    return () => window.removeEventListener("message", messageHandler);
+  }, []);
+
   const handleCopy = async (content: string) => {
     try {
       await navigator.clipboard.writeText(content);
-      console.log("✅ Copied!");
+      console.log("✅ [ChatView] Copied to clipboard!");
     } catch (err) {
-      console.error("❌ Failed to copy:", err);
+      console.error("❌ [ChatView] Failed to copy:", err);
     }
   };
 
@@ -42,7 +64,23 @@ const ChatView: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await sendMessage(userMessage.content);
+      console.log("📤 [ChatView] Requesting file context from extension...");
+      setWaitingForContext(true);
+      vscodeAPI.postMessage({ command: "getFileContext" });
+
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 500);
+        const checkContext = setInterval(() => {
+          if (!waitingForContext) {
+            clearInterval(checkContext);
+            clearTimeout(timeout);
+            resolve(null);
+          }
+        }, 50);
+      });
+
+      console.log("📤 [ChatView] Sending message with context:", fileContext);
+      const response = await sendMessage(userMessage.content, fileContext);
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -52,6 +90,7 @@ const ChatView: React.FC = () => {
       };
 
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      setFileContext(null);
     } catch (err: unknown) {
       let errorMessage = "Failed to send message";
 
@@ -76,8 +115,10 @@ const ChatView: React.FC = () => {
       }
 
       setError(errorMessage);
+      console.error("❌ [ChatView] Send message error:", errorMessage);
     } finally {
       setIsLoading(false);
+      setWaitingForContext(false);
     }
   };
 
