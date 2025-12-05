@@ -63,6 +63,7 @@ export class ApiProxy {
             url: fullUrl,
             data: formDataString, // ✅ Send as string, not object!
             headers,
+            timeout: 60000,
             validateStatus: (status) => status < 500,
           });
 

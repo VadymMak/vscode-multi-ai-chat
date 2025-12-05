@@ -25,7 +25,7 @@ const ChatView: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [fileContext, setFileContext] = useState<FileContext | null>(null);
-  const [includeFile, setIncludeFile] = useState<boolean>(true); // ✅ Toggle to include/exclude
+  const [includeFile, setIncludeFile] = useState<boolean>(true);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,17 +48,23 @@ const ChatView: React.FC = () => {
 
     window.addEventListener("message", messageHandler);
 
-    // ✅ Request initial file context
     console.log("📤 [ChatView] Requesting initial file context...");
     vscodeAPI.postMessage({ command: "getFileContext" });
 
     return () => window.removeEventListener("message", messageHandler);
   }, []);
 
-  // ✅ Refresh file context (e.g., when user switches files)
+  // ✅ Refresh file context
   const refreshFileContext = () => {
     console.log("🔄 [ChatView] Refreshing file context...");
     vscodeAPI.postMessage({ command: "getFileContext" });
+  };
+
+  // ✅ Clear chat
+  const clearChat = () => {
+    setMessages([]);
+    setError(null);
+    console.log("🧹 [ChatView] Chat cleared");
   };
 
   const handleCopy = async (content: string) => {
@@ -86,8 +92,8 @@ const ChatView: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // ✅ Use current file context if toggle is ON
-      const contextToSend = includeFile ? fileContext : null;
+      const contextToSend =
+        includeFile && fileContext ? fileContext : undefined;
       console.log("📤 [ChatView] Sending message with context:", contextToSend);
 
       const response = await sendMessage(userMessage.content, contextToSend);
@@ -163,7 +169,33 @@ const ChatView: React.FC = () => {
 
   return (
     <div className="chat-view">
+      {/* ✅ Chat Header with Clear Button */}
+      <div className="chat-header">
+        <span className="chat-title">Chat</span>
+        {messages.length > 0 && (
+          <button
+            className="clear-button"
+            onClick={clearChat}
+            title="Clear chat"
+          >
+            🗑️ Clear
+          </button>
+        )}
+      </div>
+
       <div className="chat-messages">
+        {messages.length === 0 && !isLoading && (
+          <div className="empty-state">
+            <span className="empty-icon">💬</span>
+            <span className="empty-text">Start a conversation</span>
+            <span className="empty-hint">
+              {fileInfo
+                ? `Ask about ${fileInfo.fileName}`
+                : "Open a file to get context-aware answers"}
+            </span>
+          </div>
+        )}
+
         {messages.map((message) => (
           <div key={message.id} className={`message ${message.sender}`}>
             <div className="message-content">
@@ -239,7 +271,7 @@ const ChatView: React.FC = () => {
                     : "Click to include file"
                 }
               >
-                {includeFile ? "📎" : "📎"}
+                📎
               </span>
               <span className={`file-name ${!includeFile ? "disabled" : ""}`}>
                 {fileInfo.fileName}

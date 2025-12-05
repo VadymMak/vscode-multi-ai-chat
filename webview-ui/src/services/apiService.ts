@@ -57,7 +57,7 @@ async function apiRequest(
         delete pendingRequests[requestId];
         reject(new Error("Request timeout"));
       }
-    }, 30000);
+    }, 60000);
   });
 }
 
@@ -153,36 +153,41 @@ export const apiService = {
 
 export const sendMessage = async (
   message: string,
-  fileContext?: any
+  fileContext?: {
+    filePath?: string;
+    fileName?: string;
+    language?: string;
+    lineCount?: number;
+    fileContent?: string;
+    selectedText?: string;
+  }
 ): Promise<{ message: string }> => {
   try {
-    const { selectedProjectId, projects } = useProjectStore.getState();
-
-    // ✅ Get role_id from selected project
-    const selectedProject = projects?.find((p) => p.id === selectedProjectId);
-    const roleId = selectedProject?.role_id || 1; // Default to 1
-
     console.log("📤 [apiService] Sending message:", message);
-    console.log(
-      "📂 [apiService] Project:",
-      selectedProjectId,
-      selectedProject?.name
-    );
-    console.log("🤖 [apiService] Role ID:", roleId);
 
-    const response = await apiRequest("POST", "/ask", {
-      query: message,
-      project_id: selectedProjectId || 1,
-      role_id: roleId,
-      file_path: fileContext?.filePath || null,
-      file_content: fileContext?.fileContent || null,
-      selected_text: fileContext?.selectedText || null,
+    if (fileContext) {
+      console.log("📎 [apiService] File context:", {
+        filePath: fileContext.filePath,
+        hasContent: !!fileContext.fileContent,
+        hasSelection: !!fileContext.selectedText,
+        contentLength: fileContext.fileContent?.length || 0,
+        selectionLength: fileContext.selectedText?.length || 0,
+      });
+    }
+
+    // ✅ Use /vscode/chat endpoint with camelCase fields
+    const response = await apiRequest("POST", "/vscode/chat", {
+      message: message,
+      filePath: fileContext?.filePath || null,
+      fileContent: fileContext?.fileContent || null,
+      selectedText: fileContext?.selectedText || null,
     });
 
     console.log("✅ [apiService] Response received:", response);
 
+    // ✅ Response from /vscode/chat uses "message" field
     return {
-      message: response.answer || response.response || "No response from AI",
+      message: response.message || "No response from AI",
     };
   } catch (error) {
     console.error("❌ [apiService] Send message error:", error);
