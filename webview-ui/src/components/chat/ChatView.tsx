@@ -7,6 +7,16 @@ import { sendMessage } from "../../services/apiService";
 import { vscodeAPI } from "../../utils/vscodeApi";
 import "./ChatView.css";
 
+// ✅ File context interface
+interface FileContext {
+  filePath?: string;
+  fileName?: string;
+  fileContent?: string;
+  selectedText?: string;
+  language?: string;
+  lineCount?: number;
+}
+
 const ChatView: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
@@ -14,30 +24,42 @@ const ChatView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [fileContext, setFileContext] = useState<any>(null);
-  const [waitingForContext, setWaitingForContext] = useState<boolean>(false);
-
-  // ✅ REMOVED - Token now restored in main.tsx BEFORE app mount!
+  const [fileContext, setFileContext] = useState<FileContext | null>(null);
+  const [includeFile, setIncludeFile] = useState<boolean>(true); // ✅ Toggle to include/exclude
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ✅ Listen for file context only (token handled in main.tsx)
+  // ✅ Request file context on mount and listen for updates
   useEffect(() => {
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
 
       if (message.command === "fileContext") {
         console.log("📁 [ChatView] File context received:", message.data);
-        setFileContext(message.data);
-        setWaitingForContext(false);
+        if (message.data && Object.keys(message.data).length > 0) {
+          setFileContext(message.data);
+        } else {
+          setFileContext(null);
+        }
       }
     };
 
     window.addEventListener("message", messageHandler);
+
+    // ✅ Request initial file context
+    console.log("📤 [ChatView] Requesting initial file context...");
+    vscodeAPI.postMessage({ command: "getFileContext" });
+
     return () => window.removeEventListener("message", messageHandler);
   }, []);
+
+  // ✅ Refresh file context (e.g., when user switches files)
+  const refreshFileContext = () => {
+    console.log("🔄 [ChatView] Refreshing file context...");
+    vscodeAPI.postMessage({ command: "getFileContext" });
+  };
 
   const handleCopy = async (content: string) => {
     try {
@@ -64,23 +86,11 @@ const ChatView: React.FC = () => {
     setIsLoading(true);
 
     try {
-      console.log("📤 [ChatView] Requesting file context from extension...");
-      setWaitingForContext(true);
-      vscodeAPI.postMessage({ command: "getFileContext" });
+      // ✅ Use current file context if toggle is ON
+      const contextToSend = includeFile ? fileContext : null;
+      console.log("📤 [ChatView] Sending message with context:", contextToSend);
 
-      await new Promise((resolve) => {
-        const timeout = setTimeout(resolve, 500);
-        const checkContext = setInterval(() => {
-          if (!waitingForContext) {
-            clearInterval(checkContext);
-            clearTimeout(timeout);
-            resolve(null);
-          }
-        }, 50);
-      });
-
-      console.log("📤 [ChatView] Sending message with context:", fileContext);
-      const response = await sendMessage(userMessage.content, fileContext);
+      const response = await sendMessage(userMessage.content, contextToSend);
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -90,7 +100,6 @@ const ChatView: React.FC = () => {
       };
 
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
-      setFileContext(null);
     } catch (err: unknown) {
       let errorMessage = "Failed to send message";
 
@@ -118,7 +127,6 @@ const ChatView: React.FC = () => {
       console.error("❌ [ChatView] Send message error:", errorMessage);
     } finally {
       setIsLoading(false);
-      setWaitingForContext(false);
     }
   };
 
@@ -128,6 +136,30 @@ const ChatView: React.FC = () => {
       handleSend();
     }
   };
+
+  // ✅ Get display info for file context
+  const getFileInfo = () => {
+    if (!fileContext) return null;
+
+    const hasSelection = !!fileContext.selectedText;
+    const fileName = fileContext.fileName || "Unknown file";
+    const language = fileContext.language || "text";
+    const charCount = hasSelection
+      ? fileContext.selectedText!.length
+      : fileContext.fileContent?.length || 0;
+
+    return {
+      fileName,
+      language,
+      hasSelection,
+      charCount,
+      displayText: hasSelection
+        ? `Selection (${charCount} chars)`
+        : `${fileContext.lineCount || "?"} lines`,
+    };
+  };
+
+  const fileInfo = getFileInfo();
 
   return (
     <div className="chat-view">
@@ -193,13 +225,64 @@ const ChatView: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* ✅ File Context Indicator */}
+      <div className="file-context-bar">
+        {fileInfo ? (
+          <>
+            <div className="file-info">
+              <span
+                className={`file-toggle ${includeFile ? "active" : ""}`}
+                onClick={() => setIncludeFile(!includeFile)}
+                title={
+                  includeFile
+                    ? "Click to exclude file"
+                    : "Click to include file"
+                }
+              >
+                {includeFile ? "📎" : "📎"}
+              </span>
+              <span className={`file-name ${!includeFile ? "disabled" : ""}`}>
+                {fileInfo.fileName}
+              </span>
+              <span className="file-badge">{fileInfo.language}</span>
+              {fileInfo.hasSelection && (
+                <span className="file-badge selection">Selected</span>
+              )}
+              <span className="file-meta">{fileInfo.displayText}</span>
+            </div>
+            <button
+              className="refresh-button"
+              onClick={refreshFileContext}
+              title="Refresh file context"
+            >
+              🔄
+            </button>
+          </>
+        ) : (
+          <div className="file-info">
+            <span className="no-file">No file open</span>
+            <button
+              className="refresh-button"
+              onClick={refreshFileContext}
+              title="Refresh file context"
+            >
+              🔄
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="chat-input">
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyPress}
-          placeholder="Type a message... (Enter to send)"
+          placeholder={
+            fileInfo && includeFile
+              ? `Ask about ${fileInfo.fileName}...`
+              : "Type a message... (Enter to send)"
+          }
           disabled={isLoading}
         />
         <button onClick={handleSend} disabled={isLoading || !inputValue.trim()}>
