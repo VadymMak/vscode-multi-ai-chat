@@ -67,6 +67,14 @@
       {
         "command": "multi-ai-chat.explainFile",
         "title": "Multi AI Chat: Explain File"
+      },
+      {
+        "command": "multi-ai-chat.showDependencies",
+        "title": "Multi AI Chat: Show Dependencies"
+      },
+      {
+        "command": "multi-ai-chat.findError",
+        "title": "Multi AI Chat: Find Error"
       }
     ],
     "keybindings": [
@@ -80,6 +88,18 @@
         "command": "multi-ai-chat.explainFile",
         "key": "ctrl+shift+e",
         "mac": "cmd+shift+e",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "multi-ai-chat.showDependencies",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "multi-ai-chat.findError",
+        "key": "ctrl+shift+x",
+        "mac": "cmd+shift+x",
         "when": "editorTextFocus"
       }
     ]

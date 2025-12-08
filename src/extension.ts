@@ -7,6 +7,8 @@ import { initFileContextTracking } from "./utils/fileContext";
 import { indexWorkspace } from "./services/fileIndexerService";
 import { findRelatedFiles } from "./commands/findRelatedFiles";
 import { explainFile } from "./commands/explainFile";
+import { showDependencies } from "./commands/showDependencies";
+import { findError } from "./commands/findError";
 
 // Store selected project ID (will be updated from MainPanel)
 let currentProjectId: number | null = null;
@@ -104,10 +106,26 @@ export function activate(context: vscode.ExtensionContext) {
   );
   // ===============================================
 
+  // ========== NEW COMMAND: Show Dependencies ==========
+  const showDependenciesCommand = vscode.commands.registerCommand(
+    "multi-ai-chat.showDependencies",
+    () => showDependencies(currentProjectId)
+  );
+  // ====================================================
+
+  // ========== NEW COMMAND: Find Error ==========
+  const findErrorCommand = vscode.commands.registerCommand(
+    "multi-ai-chat.findError",
+    () => findError(currentProjectId)
+  );
+  // =============================================
+
   context.subscriptions.push(openPanelCommand);
   context.subscriptions.push(indexWorkspaceCommand);
   context.subscriptions.push(findRelatedFilesCommand);
   context.subscriptions.push(explainFileCommand);
+  context.subscriptions.push(showDependenciesCommand);
+  context.subscriptions.push(findErrorCommand);
 
   logger.info("VS Code Multi AI Chat extension activated successfully.");
 }
