@@ -59,6 +59,28 @@
       {
         "command": "vscode-multi-ai-chat.indexWorkspace",
         "title": "Multi AI Chat: Index Workspace"
+      },
+      {
+        "command": "multi-ai-chat.findRelatedFiles",
+        "title": "Multi AI Chat: Find Related Files"
+      },
+      {
+        "command": "multi-ai-chat.explainFile",
+        "title": "Multi AI Chat: Explain File"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "multi-ai-chat.findRelatedFiles",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "multi-ai-chat.explainFile",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorTextFocus"
       }
     ]
   },

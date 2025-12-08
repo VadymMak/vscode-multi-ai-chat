@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { vscodeAPI } from "../utils/vscodeApi"; // ← ADD THIS
 
 export interface Project {
   id: number;
@@ -6,8 +7,8 @@ export interface Project {
   description?: string;
   created_at?: string;
   git_url?: string;
-  role_id?: number; // ✅ Role assigned to project
-  assistant_name?: string; // ✅ Assistant name
+  role_id?: number;
+  assistant_name?: string;
 }
 
 export interface Role {
@@ -46,14 +47,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Auto-select first project if none selected
     const { selectedProjectId } = get();
     if (!selectedProjectId && projects.length > 0) {
-      set({ selectedProjectId: projects[0].id });
-      console.log("📂 [ProjectStore] Auto-selected project:", projects[0].id);
+      const firstProjectId = projects[0].id;
+      set({ selectedProjectId: firstProjectId });
+      console.log("📂 [ProjectStore] Auto-selected project:", firstProjectId);
+
+      // ✅ NOTIFY EXTENSION about auto-selection
+      vscodeAPI.postMessage({
+        command: "projectSelected",
+        projectId: firstProjectId,
+      });
     }
   },
 
   selectProject: (projectId) => {
     set({ selectedProjectId: projectId });
     console.log("📂 [ProjectStore] Selected project:", projectId);
+
+    // ✅ NOTIFY EXTENSION about selection
+    vscodeAPI.postMessage({
+      command: "projectSelected",
+      projectId: projectId,
+    });
   },
 
   setLoadingProjects: (loading) => set({ isLoadingProjects: loading }),
@@ -64,5 +78,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       selectedProjectId: null,
     });
     console.log("🗑️ [ProjectStore] Selection cleared");
+
+    // ✅ NOTIFY EXTENSION about clear
+    vscodeAPI.postMessage({
+      command: "projectSelected",
+      projectId: null,
+    });
   },
 }));

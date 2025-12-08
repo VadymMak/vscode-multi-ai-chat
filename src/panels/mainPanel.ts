@@ -193,6 +193,19 @@ export class MainPanel {
               );
             }
             break;
+          case "projectSelected":
+            logger.info(`📂 Project selected: ${message.projectId}`);
+            try {
+              // Import and call setCurrentProjectId from extension
+              const { setCurrentProjectId } = await import("../extension");
+              setCurrentProjectId(message.projectId);
+              logger.info(
+                `✅ Project ID ${message.projectId} set in extension`
+              );
+            } catch (e) {
+              logger.error("Failed to set project ID", e as Error);
+            }
+            break;
 
           case "alert":
             vscode.window.showErrorMessage(message.text);

@@ -5,6 +5,20 @@ import { MainPanel } from "./panels/mainPanel";
 import logger from "./utils/logger";
 import { initFileContextTracking } from "./utils/fileContext";
 import { indexWorkspace } from "./services/fileIndexerService";
+import { findRelatedFiles } from "./commands/findRelatedFiles";
+import { explainFile } from "./commands/explainFile";
+
+// Store selected project ID (will be updated from MainPanel)
+let currentProjectId: number | null = null;
+
+export function setCurrentProjectId(projectId: number | null) {
+  currentProjectId = projectId;
+  logger.info(`Project ID updated: ${projectId}`);
+}
+
+export function getCurrentProjectId(): number | null {
+  return currentProjectId;
+}
 
 export function activate(context: vscode.ExtensionContext) {
   logger.info("Activating the VS Code Multi AI Chat extension.");
@@ -76,8 +90,24 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  // ========== NEW COMMAND: Find Related Files ==========
+  const findRelatedFilesCommand = vscode.commands.registerCommand(
+    "multi-ai-chat.findRelatedFiles",
+    () => findRelatedFiles(currentProjectId)
+  );
+  // =====================================================
+
+  // ========== NEW COMMAND: Explain File ==========
+  const explainFileCommand = vscode.commands.registerCommand(
+    "multi-ai-chat.explainFile",
+    () => explainFile(currentProjectId)
+  );
+  // ===============================================
+
   context.subscriptions.push(openPanelCommand);
   context.subscriptions.push(indexWorkspaceCommand);
+  context.subscriptions.push(findRelatedFilesCommand);
+  context.subscriptions.push(explainFileCommand);
 
   logger.info("VS Code Multi AI Chat extension activated successfully.");
 }
