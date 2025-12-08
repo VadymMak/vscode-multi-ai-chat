@@ -55,6 +55,10 @@
       {
         "command": "vscode-multi-ai-chat.openMainPanel",
         "title": "Multi AI Chat: Open Panel"
+      },
+      {
+        "command": "vscode-multi-ai-chat.indexWorkspace",
+        "title": "Multi AI Chat: Index Workspace"
       }
     ]
   },

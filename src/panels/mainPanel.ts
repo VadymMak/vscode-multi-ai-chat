@@ -83,6 +83,15 @@ export class MainPanel {
             logger.info("🔑 Token received from webview");
             if (message.token) {
               await this._saveToken(message.token);
+              // ✅ ADD: Also update AuthManager
+              try {
+                const authManager = (await import("../auth/authManager"))
+                  .default;
+                await authManager.getInstance().saveToken(message.token);
+                logger.info("💾 Token saved in AuthManager");
+              } catch (e) {
+                logger.error("Failed to save token to AuthManager", e as Error);
+              }
               logger.info("💾 Token saved in extension storage");
             } else {
               // ✅ Handle logout - clear token
@@ -144,6 +153,44 @@ export class MainPanel {
                 command: "fileContext",
                 data: {},
               });
+            }
+            break;
+
+          case "indexWorkspace":
+            logger.info(
+              `📂 Index workspace request for project ${message.projectId}`
+            );
+            try {
+              const { indexWorkspace } = await import(
+                "../services/fileIndexerService"
+              );
+              const result = await indexWorkspace(message.projectId);
+
+              // Send result back to webview
+              this._panel.webview.postMessage({
+                type: "indexingComplete",
+                success: true,
+                result: result,
+              });
+
+              // Show VS Code notification
+              vscode.window.showInformationMessage(
+                `✅ Indexed ${result.indexed} files, skipped ${result.skipped}, errors ${result.errors}`
+              );
+            } catch (error) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              logger.error(`❌ Indexing failed: ${errorMessage}`);
+
+              this._panel.webview.postMessage({
+                type: "indexingComplete",
+                success: false,
+                error: errorMessage,
+              });
+
+              vscode.window.showErrorMessage(
+                `❌ Indexing failed: ${errorMessage}`
+              );
             }
             break;
 

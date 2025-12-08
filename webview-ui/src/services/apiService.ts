@@ -165,19 +165,22 @@ export const sendMessage = async (
   try {
     console.log("📤 [apiService] Sending message:", message);
 
+    // ✅ Get selected project
+    const projectId = useProjectStore.getState().selectedProjectId;
+    console.log("📂 [apiService] Project ID:", projectId);
+
     if (fileContext) {
       console.log("📎 [apiService] File context:", {
         filePath: fileContext.filePath,
         hasContent: !!fileContext.fileContent,
         hasSelection: !!fileContext.selectedText,
-        contentLength: fileContext.fileContent?.length || 0,
-        selectionLength: fileContext.selectedText?.length || 0,
       });
     }
 
-    // ✅ Use /vscode/chat endpoint with camelCase fields
+    // ✅ Include project_id in request
     const response = await apiRequest("POST", "/vscode/chat", {
       message: message,
+      project_id: projectId, // ✅ ДОБАВЛЕНО!
       filePath: fileContext?.filePath || null,
       fileContent: fileContext?.fileContent || null,
       selectedText: fileContext?.selectedText || null,
@@ -185,7 +188,6 @@ export const sendMessage = async (
 
     console.log("✅ [apiService] Response received:", response);
 
-    // ✅ Response from /vscode/chat uses "message" field
     return {
       message: response.message || "No response from AI",
     };

@@ -128,3 +128,26 @@
   font-size: 12px;
   color: #4fc3f7;
 }
+
+/* Index Button */
+.index-button {
+  padding: 6px 12px;
+  background-color: #0e639c;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s;
+}
+
+.index-button:hover {
+  background-color: #1177bb;
+}
+
+.index-button:disabled {
+  background-color: #3c3c3c;
+  color: #888888;
+  cursor: not-allowed;
+}

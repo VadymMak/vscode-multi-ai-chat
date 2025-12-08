@@ -23,7 +23,7 @@ export enum Environment {
 export const DEFAULT_CONFIG: AppConfig = {
   environment: Environment.DEVELOPMENT,
   logLevel: LogLevel.INFO,
-  apiBaseUrl: "http://localhost:3000/api",
+  apiBaseUrl: "https://multi-ai-chat-production.up.railway.app/api",
   maxRetries: 3,
 };
 
@@ -47,6 +47,6 @@ export const TIMEOUTS = {
 export const ENVIRONMENT = Environment; // Alias для Environment enum
 
 export const DEFAULT_SETTINGS = {
-  API_BASE_URL: "http://localhost:3000/api",
+  API_BASE_URL: "https://multi-ai-chat-production.up.railway.app/api",
   LOG_LEVEL: LogLevel.INFO,
 };
