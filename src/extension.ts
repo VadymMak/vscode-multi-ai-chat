@@ -9,6 +9,7 @@ import { findRelatedFiles } from "./commands/findRelatedFiles";
 import { explainFile } from "./commands/explainFile";
 import { showDependencies } from "./commands/showDependencies";
 import { findError } from "./commands/findError";
+import { setupFileWatcher } from "./services/incrementalIndexer";
 
 // Store selected project ID (will be updated from MainPanel)
 let currentProjectId: number | null = null;
@@ -28,6 +29,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Initialize file context tracking FIRST
   initFileContextTracking(context);
   logger.info("FileContext tracking initialized");
+
+  // Initialize file watcher for incremental re-indexing
+  setupFileWatcher(context);
+  logger.info("File watcher initialized for incremental re-indexing");
 
   const authManager = AuthManager.initialize(context);
   logger.info("AuthManager initialized with context");

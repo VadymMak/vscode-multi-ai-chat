@@ -265,3 +265,25 @@ export async function indexSingleFile(
     logger.error(`Failed to index ${relativePath}`, error as Error);
   }
 }
+
+/**
+ * Re-index a single file (incremental update)
+ */
+export async function reindexFile(
+  projectId: number,
+  filePath: string,
+  content: string
+): Promise<void> {
+  try {
+    await post("/file-indexer/reindex-file", {
+      project_id: projectId,
+      file_path: filePath,
+      content: content,
+    } as any);
+
+    logger.info(`✅ Re-indexed: ${filePath}`);
+  } catch (error) {
+    logger.error(`Failed to re-index ${filePath}`, error as Error);
+    throw error;
+  }
+}
