@@ -1,0 +1,139 @@
+/* ProjectInfo.css - Compact single-line project status */
+
+.project-info {
+  background-color: #252526;
+  border-bottom: 1px solid #3e3e42;
+  padding: 8px 20px;
+  flex-shrink: 0;
+}
+
+.project-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-info-details {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #cccccc;
+  flex: 1;
+  min-width: 0; /* Allow text truncation */
+}
+
+.project-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.project-name {
+  font-weight: 600;
+  color: #cccccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.project-id {
+  color: #888888;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.project-separator {
+  color: #666666;
+  flex-shrink: 0;
+}
+
+.project-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.project-info-empty {
+  color: #888888;
+  font-size: 13px;
+  font-style: italic;
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* Index button */
+.index-button {
+  background-color: #0e639c;
+  color: white;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.index-button:hover:not(:disabled) {
+  background-color: #1177bb;
+  transform: translateY(-1px);
+}
+
+.index-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.index-button:disabled {
+  background-color: #505050;
+  color: #888888;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Status-based button colors */
+.index-button.indexed {
+  background-color: #0e639c;
+}
+
+.index-button.stale {
+  background-color: #ce9178;
+}
+
+.index-button.stale:hover:not(:disabled) {
+  background-color: #d4a373;
+}
+
+.index-button.not_indexed {
+  background-color: #16825d;
+}
+
+.index-button.not_indexed:hover:not(:disabled) {
+  background-color: #1a9870;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .project-info {
+    padding: 6px 12px;
+  }
+
+  .project-info-header {
+    gap: 8px;
+  }
+
+  .project-name {
+    max-width: 120px;
+  }
+
+  .index-button {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+}

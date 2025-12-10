@@ -4,6 +4,7 @@ import * as fs from "fs";
 import logger from "../utils/logger";
 import { getFileContext } from "../utils/fileContext";
 import { ApiProxy } from "../services/apiProxy";
+import { detectOrSelectProject } from "../services/projectDetection";
 
 export class MainPanel {
   public static currentPanel: MainPanel | undefined;
@@ -93,10 +94,58 @@ export class MainPanel {
                 logger.error("Failed to save token to AuthManager", e as Error);
               }
               logger.info("💾 Token saved in extension storage");
+
+              // ✅ NEW: Auto-detect project after successful login
+              try {
+                logger.info("🔍 Auto-detecting project after login...");
+                const projectId = await detectOrSelectProject();
+                if (projectId) {
+                  logger.info(`✅ Project ${projectId} detected after login`);
+
+                  // ✅ CRITICAL: Send to webview!
+                  this._panel.webview.postMessage({
+                    command: "projectUpdated",
+                    projectId: projectId,
+                  });
+
+                  logger.info(`📤 Sent project ${projectId} to webview`);
+                }
+              } catch (e) {
+                logger.error("Failed to auto-detect project", e as Error);
+              }
             } else {
               // ✅ Handle logout - clear token
               await this._clearToken();
               logger.info("🗑️ Token cleared from extension storage");
+            }
+            break;
+
+          case "tokenValidated": // ✅ NEW CASE!
+            logger.info("✅ Token validated by webview");
+
+            // NOW it's safe to detect project
+            try {
+              logger.info("🔍 Auto-detecting project (token validated)...");
+              const projectId = await detectOrSelectProject();
+              if (projectId) {
+                logger.info(
+                  `✅ Project ${projectId} detected (restored session)`
+                );
+
+                this._panel.webview.postMessage({
+                  command: "projectUpdated",
+                  projectId: projectId,
+                });
+
+                logger.info(
+                  `📤 Sent project ${projectId} to webview (restored)`
+                );
+              }
+            } catch (e) {
+              logger.error(
+                "Failed to auto-detect project (restored session)",
+                e as Error
+              );
             }
             break;
 
@@ -253,6 +302,10 @@ export class MainPanel {
           command: "tokenUpdated",
           token: token,
         });
+
+        // ✅ DON'T auto-detect project here!
+        // Webview will notify us if token is valid via 'tokenValidated' message
+        logger.info("⏳ Waiting for webview to validate token...");
       } else {
         logger.info("📭 No stored token found");
       }

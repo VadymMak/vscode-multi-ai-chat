@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { vscodeAPI } from "../utils/vscodeApi"; // ← ADD THIS
+import { vscodeAPI } from "../utils/vscodeApi";
 
 export interface Project {
   id: number;
@@ -86,3 +86,44 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 }));
+
+// ✅ NEW: Listen for messages from extension
+(() => {
+  try {
+    if (typeof globalThis !== "undefined") {
+      const handleMessage = (event: any) => {
+        const message = event.data;
+
+        switch (message.command) {
+          case "projectUpdated":
+            console.log(
+              "📂 [ProjectStore] Project updated from extension:",
+              message.projectId
+            );
+
+            // Update selected project in store
+            useProjectStore.getState().selectProject(message.projectId);
+
+            // If projects not loaded yet, load them
+            const { projects } = useProjectStore.getState();
+            if (projects.length === 0) {
+              console.log(
+                "📂 [ProjectStore] Projects not loaded, will load on auth"
+              );
+            }
+            break;
+
+          case "tokenUpdated":
+            // Token updated - projects will be loaded via AuthContext
+            console.log("🔑 [ProjectStore] Token updated, projects will load");
+            break;
+        }
+      };
+
+      (globalThis as any).addEventListener("message", handleMessage);
+      console.log("👂 [ProjectStore] Message listener initialized");
+    }
+  } catch (e) {
+    console.error("Failed to initialize message listener:", e);
+  }
+})();

@@ -128,6 +128,32 @@ export const apiService = {
     }
   },
 
+  // ✅ NEW: Get project index status
+  getProjectIndexStatus: async (
+    projectId: number
+  ): Promise<{
+    project_id: number;
+    indexed_at: string | null;
+    files_count: number;
+    status: "not_indexed" | "indexed" | "stale";
+  }> => {
+    console.log(
+      `📊 [apiService] Fetching index status for project ${projectId}...`
+    );
+
+    try {
+      const response = await apiRequest(
+        "GET",
+        `/projects/${projectId}/index-status`
+      );
+      console.log("📊 [apiService] Index status received:", response);
+      return response;
+    } catch (error) {
+      console.error("❌ [apiService] Get index status error:", error);
+      throw error;
+    }
+  },
+
   // ✅ NEW: Get roles for a project
   getRoles: async (): Promise<any[]> => {
     console.log(`📋 [apiService] Fetching roles...`);

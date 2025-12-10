@@ -2,7 +2,7 @@ import React from "react";
 import { useAuth } from "./contexts/AuthContext";
 import LoginForm from "./components/auth/LoginForm";
 import ChatView from "./components/chat/ChatView";
-import ProjectSelector from "./components/ProjectSelector/ProjectSelector"; // ✅ NEW
+import ProjectInfo from "./components/ProjectInfo/ProjectInfo"; // ✅ CHANGED from ProjectSelector
 import "./App.css";
 
 const App: React.FC = () => {
@@ -20,8 +20,8 @@ const App: React.FC = () => {
         )}
       </header>
 
-      {/* ✅ NEW: Project Selector */}
-      {isAuthenticated && <ProjectSelector />}
+      {/* ✅ CHANGED: ProjectInfo instead of ProjectSelector */}
+      {isAuthenticated && <ProjectInfo />}
 
       <main className="app-main">
         {isAuthenticated ? (
