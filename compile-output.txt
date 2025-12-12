@@ -1,0 +1,4 @@
+
+> vscode-multi-ai-chat@1.0.0 compile
+> tsc -p ./
+

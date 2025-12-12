@@ -137,3 +137,27 @@
     font-size: 11px;
   }
 }
+.project-dropdown {
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  padding: 4px 8px;
+  border-radius: 2px;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 150px;
+}
+
+.project-dropdown:hover {
+  background: var(--vscode-dropdown-listBackground);
+}
+
+.project-dropdown:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.project-label {
+  font-weight: 500;
+  margin-right: 4px;
+}

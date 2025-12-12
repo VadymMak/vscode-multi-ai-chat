@@ -1,9 +1,9 @@
 import { useAuthStore } from "../store/authStore";
-import { useProjectStore } from "../store/projectStore"; // ✅ NEW
+import { useProjectStore } from "../store/projectStore";
 import { AuthResponse, CheckAuthResponse, Project } from "../types";
 import { vscodeAPI } from "../utils/vscodeApi";
 
-// ✅ Simple API Client using Extension as proxy
+// Simple API Client using Extension as proxy
 let requestCounter = 0;
 const pendingRequests: Record<string, any> = {};
 
@@ -51,7 +51,7 @@ async function apiRequest(
       },
     });
 
-    // Timeout after 30 seconds
+    // Timeout after 60 seconds
     setTimeout(() => {
       if (pendingRequests[requestId]) {
         delete pendingRequests[requestId];
@@ -72,7 +72,7 @@ export const apiService = {
 
     console.log("🔧 apiService.login response:", response);
 
-    // ✅ Save token to Zustand store
+    // Save token to Zustand store
     useAuthStore.getState().setToken(response.access_token);
     console.log("💾 Token saved to Zustand store");
 
@@ -83,9 +83,9 @@ export const apiService = {
   },
 
   logout: async (): Promise<{ success: boolean }> => {
-    // ✅ Clear token from Zustand store
+    // Clear token from Zustand store
     useAuthStore.getState().clearToken();
-    // ✅ Clear project selection
+    // Clear project selection
     useProjectStore.getState().clearSelection();
     return { success: true };
   },
@@ -105,7 +105,6 @@ export const apiService = {
     }
   },
 
-  // ✅ NEW: Get projects
   getProjects: async (): Promise<Project[]> => {
     console.log("📂 [apiService] Fetching projects...");
 
@@ -118,7 +117,7 @@ export const apiService = {
         ? response
         : response.projects || [];
 
-      // ✅ Save to Zustand store
+      // Save to Zustand store
       useProjectStore.getState().setProjects(projects);
 
       return projects;
@@ -128,7 +127,6 @@ export const apiService = {
     }
   },
 
-  // ✅ NEW: Get project index status
   getProjectIndexStatus: async (
     projectId: number
   ): Promise<{
@@ -154,7 +152,6 @@ export const apiService = {
     }
   },
 
-  // ✅ NEW: Get roles for a project
   getRoles: async (): Promise<any[]> => {
     console.log(`📋 [apiService] Fetching roles...`);
 
@@ -191,7 +188,7 @@ export const sendMessage = async (
   try {
     console.log("📤 [apiService] Sending message:", message);
 
-    // ✅ Get selected project
+    // Get selected project
     const projectId = useProjectStore.getState().selectedProjectId;
     console.log("📂 [apiService] Project ID:", projectId);
 
@@ -203,10 +200,10 @@ export const sendMessage = async (
       });
     }
 
-    // ✅ Include project_id in request
+    // Include project_id in request
     const response = await apiRequest("POST", "/vscode/chat", {
       message: message,
-      project_id: projectId, // ✅ ДОБАВЛЕНО!
+      project_id: projectId,
       filePath: fileContext?.filePath || null,
       fileContent: fileContext?.fileContent || null,
       selectedText: fileContext?.selectedText || null,

@@ -21,10 +21,31 @@ export function useAuth(): UseAuthReturn {
   // ✅ Track if we just logged in (to prevent double detection)
   const justLoggedIn = useRef(false);
 
-  // ✅ Check auth ONLY if token exists
+  /// ✅ Check auth ONLY if token exists
   useEffect(() => {
     const verifyToken = async () => {
       if (token) {
+        // ✅ NEW: Check if we were authenticated in this session
+        const wasAuthenticated = sessionStorage.getItem(
+          "multi-ai-chat-auth-status"
+        );
+
+        if (wasAuthenticated === "authenticated") {
+          // ✅ Trust sessionStorage, set state immediately (no flash!)
+          console.log("⚡ Using cached auth state - instant display");
+          setAuthStatus("authenticated");
+
+          // ✅ Load cached user if available
+          const cachedUser = sessionStorage.getItem("multi-ai-chat-user");
+          if (cachedUser) {
+            try {
+              setUser(JSON.parse(cachedUser));
+            } catch (e) {
+              console.error("Failed to parse cached user:", e);
+            }
+          }
+        }
+
         console.log("🔍 Token exists, verifying with backend...");
 
         // ✅ CRITICAL: Skip verification if we just logged in
@@ -39,6 +60,17 @@ export function useAuth(): UseAuthReturn {
           if (result.isAuthenticated) {
             setUser(result.user);
             setAuthStatus("authenticated");
+
+            // ✅ Cache auth state
+            sessionStorage.setItem(
+              "multi-ai-chat-auth-status",
+              "authenticated"
+            );
+            sessionStorage.setItem(
+              "multi-ai-chat-user",
+              JSON.stringify(result.user)
+            );
+
             console.log("✅ Token verified, user authenticated");
 
             // ✅ Send tokenValidated (this is a RESTORED session)
@@ -52,6 +84,10 @@ export function useAuth(): UseAuthReturn {
             vscodeAPI.setState({ authToken: null });
             vscodeAPI.postMessage({ command: "tokenUpdated", token: null });
             setAuthStatus("unauthenticated");
+
+            // ✅ Clear cache
+            sessionStorage.removeItem("multi-ai-chat-auth-status");
+            sessionStorage.removeItem("multi-ai-chat-user");
           }
         } catch (error) {
           console.error("❌ Token verification failed:", error);
@@ -59,10 +95,18 @@ export function useAuth(): UseAuthReturn {
           vscodeAPI.setState({ authToken: null });
           vscodeAPI.postMessage({ command: "tokenUpdated", token: null });
           setAuthStatus("unauthenticated");
+
+          // ✅ Clear cache
+          sessionStorage.removeItem("multi-ai-chat-auth-status");
+          sessionStorage.removeItem("multi-ai-chat-user");
         }
       } else {
         console.log("📭 No token found, showing login form");
         setAuthStatus("unauthenticated");
+
+        // ✅ Clear cache
+        sessionStorage.removeItem("multi-ai-chat-auth-status");
+        sessionStorage.removeItem("multi-ai-chat-user");
       }
     };
 
@@ -101,6 +145,12 @@ export function useAuth(): UseAuthReturn {
       setUser(response.user);
       setAuthStatus("authenticated");
 
+      sessionStorage.setItem("multi-ai-chat-auth-status", "authenticated");
+      sessionStorage.setItem(
+        "multi-ai-chat-user",
+        JSON.stringify(response.user)
+      );
+
       console.log("💾 Saving token to VS Code State");
       vscodeAPI.setState({ authToken: response.token });
 
@@ -125,6 +175,11 @@ export function useAuth(): UseAuthReturn {
       await apiService.logout();
       setUser(null);
       setAuthStatus("unauthenticated");
+
+      sessionStorage.removeItem("multi-ai-chat-auth-status");
+      sessionStorage.removeItem("multi-ai-chat-user");
+      sessionStorage.removeItem("multi-ai-chat-projects");
+      sessionStorage.removeItem("multi-ai-chat-selected-project");
 
       console.log("🗑️ Clearing token from VS Code State");
       vscodeAPI.setState({ authToken: null });

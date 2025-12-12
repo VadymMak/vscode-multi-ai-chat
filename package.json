@@ -27,34 +27,48 @@
     "axios": "^1.6.0",
     "date-fns": "^4.1.0"
   },
-  "vsce": {
-    "categories": [
-      "Other"
-    ],
-    "icon": "images/icon.png",
-    "repository": {
-      "type": "git",
-      "url": "https://github.com/your-repo/vscode-multi-ai-chat.git"
-    },
-    "bugs": {
-      "url": "https://github.com/your-repo/vscode-multi-ai-chat/issues"
-    },
-    "homepage": "https://github.com/your-repo/vscode-multi-ai-chat#readme"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-repo/vscode-multi-ai-chat.git"
   },
+  "bugs": {
+    "url": "https://github.com/your-repo/vscode-multi-ai-chat/issues"
+  },
+  "homepage": "https://github.com/your-repo/vscode-multi-ai-chat#readme",
+  "categories": [
+    "Other"
+  ],
   "files": [
     "dist",
     "out",
-    "webview-ui/dist"
+    "webview-ui/dist",
+    "resources"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "multi-ai-chat-sidebar",
+          "title": "Multi AI Chat",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "multi-ai-chat-sidebar": [
+        {
+          "type": "webview",
+          "id": "multi-ai-chat.mainView",
+          "name": "Chat",
+          "contextualTitle": "Multi AI Chat",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "vscode-multi-ai-chat.start",
         "title": "Multi AI Chat: Start"
-      },
-      {
-        "command": "vscode-multi-ai-chat.openMainPanel",
-        "title": "Multi AI Chat: Open Panel"
       },
       {
         "command": "vscode-multi-ai-chat.indexWorkspace",
@@ -75,6 +89,17 @@
       {
         "command": "multi-ai-chat.findError",
         "title": "Multi AI Chat: Find Error"
+      },
+      {
+        "command": "multi-ai-chat.editFile",
+        "title": "AI: Edit This File",
+        "category": "Multi-AI Chat",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "multi-ai-chat.focus",
+        "title": "Focus on Multi AI Chat",
+        "category": "Multi AI Chat"
       }
     ],
     "keybindings": [
@@ -101,8 +126,23 @@
         "key": "ctrl+shift+x",
         "mac": "cmd+shift+x",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "multi-ai-chat.editFile",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorTextFocus"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "multi-ai-chat.editFile",
+          "when": "editorTextFocus",
+          "group": "multi-ai-chat@1"
+        }
+      ]
+    }
   },
   "activationEvents": [
     "onStartupFinished"

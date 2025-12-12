@@ -46,17 +46,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     // Auto-select first project if none selected
     const { selectedProjectId } = get();
-    if (!selectedProjectId && projects.length > 0) {
-      const firstProjectId = projects[0].id;
-      set({ selectedProjectId: firstProjectId });
-      console.log("📂 [ProjectStore] Auto-selected project:", firstProjectId);
-
-      // ✅ NOTIFY EXTENSION about auto-selection
-      vscodeAPI.postMessage({
-        command: "projectSelected",
-        projectId: firstProjectId,
-      });
-    }
+    console.log("📂 [ProjectStore] Auto-selected project:", projects.length);
   },
 
   selectProject: (projectId) => {
@@ -101,15 +91,24 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
               message.projectId
             );
 
-            // Update selected project in store
-            useProjectStore.getState().selectProject(message.projectId);
-
-            // If projects not loaded yet, load them
+            // ✅ FIX: Load projects first if not loaded, then select
             const { projects } = useProjectStore.getState();
             if (projects.length === 0) {
-              console.log(
-                "📂 [ProjectStore] Projects not loaded, will load on auth"
-              );
+              console.log("📂 [ProjectStore] Loading projects first...");
+
+              // Dynamically import apiService to load projects
+              import("../services/apiService").then(({ apiService }) => {
+                apiService.getProjects().then(() => {
+                  console.log(
+                    "📂 [ProjectStore] Projects loaded, now selecting"
+                  );
+                  // THEN select the project
+                  useProjectStore.getState().selectProject(message.projectId);
+                });
+              });
+            } else {
+              // Projects already loaded, just select
+              useProjectStore.getState().selectProject(message.projectId);
             }
             break;
 
@@ -125,5 +124,55 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   } catch (e) {
     console.error("Failed to initialize message listener:", e);
+  }
+})();
+
+// ✅ NEW: Persist projects to sessionStorage
+(() => {
+  try {
+    // Load from sessionStorage on init
+    const savedProjects = sessionStorage.getItem("multi-ai-chat-projects");
+    const savedProjectId = sessionStorage.getItem(
+      "multi-ai-chat-selected-project"
+    );
+
+    if (savedProjects) {
+      const projects = JSON.parse(savedProjects);
+      useProjectStore.setState({ projects });
+      console.log(
+        "📦 [ProjectStore] Restored projects from sessionStorage:",
+        projects.length
+      );
+    }
+
+    if (savedProjectId) {
+      const projectId = parseInt(savedProjectId, 10);
+      useProjectStore.setState({ selectedProjectId: projectId });
+      console.log(
+        "📦 [ProjectStore] Restored selected project from sessionStorage:",
+        projectId
+      );
+    }
+
+    // Subscribe to changes and save to sessionStorage
+    useProjectStore.subscribe((state) => {
+      if (state.projects.length > 0) {
+        sessionStorage.setItem(
+          "multi-ai-chat-projects",
+          JSON.stringify(state.projects)
+        );
+      }
+
+      if (state.selectedProjectId) {
+        sessionStorage.setItem(
+          "multi-ai-chat-selected-project",
+          state.selectedProjectId.toString()
+        );
+      }
+    });
+
+    console.log("💾 [ProjectStore] sessionStorage persistence initialized");
+  } catch (e) {
+    console.error("Failed to initialize sessionStorage persistence:", e);
   }
 })();

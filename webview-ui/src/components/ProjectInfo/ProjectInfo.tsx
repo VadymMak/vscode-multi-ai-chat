@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useProjectStore } from "../../store/projectStore";
 import { apiService } from "../../services/apiService";
+import { vscodeAPI } from "../../utils/vscodeApi";
 import "./ProjectInfo.css";
 
 interface IndexStatus {
@@ -17,6 +18,27 @@ const ProjectInfo: React.FC = () => {
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+
+      if (message.type === "indexingComplete") {
+        console.log("✅ [ProjectInfo] Indexing complete:", message);
+        setIsIndexing(false);
+
+        if (message.success) {
+          // Refresh status
+          fetchIndexStatus();
+        } else {
+          console.error("❌ [ProjectInfo] Indexing failed:", message.error);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
   // Fetch index status when project is selected
   useEffect(() => {
     if (!selectedProjectId) {
@@ -24,26 +46,29 @@ const ProjectInfo: React.FC = () => {
       return;
     }
 
+    // ✅ Try to load from sessionStorage first
+    const cachedStatus = sessionStorage.getItem(
+      `index-status-${selectedProjectId}`
+    );
+    if (cachedStatus) {
+      try {
+        const parsed = JSON.parse(cachedStatus);
+        setIndexStatus(parsed);
+        console.log(
+          `📦 [ProjectInfo] Loaded cached status for project ${selectedProjectId}`
+        );
+
+        // Still fetch fresh data in background
+        fetchIndexStatus();
+        return;
+      } catch (e) {
+        console.error("Failed to parse cached status:", e);
+      }
+    }
+
+    // No cache, fetch normally
     fetchIndexStatus();
   }, [selectedProjectId]);
-
-  useEffect(() => {
-    if (selectedProjectId && projects.length === 0) {
-      console.log("📂 [ProjectInfo] Auto-fetching projects list...");
-
-      apiService
-        .getProjects()
-        .then((projectsList) => {
-          console.log(
-            `📂 [ProjectInfo] Loaded ${projectsList.length} projects`
-          );
-          useProjectStore.getState().setProjects(projectsList);
-        })
-        .catch((err) => {
-          console.error("❌ [ProjectInfo] Failed to load projects:", err);
-        });
-    }
-  }, [selectedProjectId, projects.length]);
 
   const fetchIndexStatus = async () => {
     if (!selectedProjectId) return;
@@ -56,8 +81,14 @@ const ProjectInfo: React.FC = () => {
       console.log(
         `📊 [ProjectInfo] Received status:`,
         JSON.stringify(status, null, 2)
-      ); // ✅ USE JSON.stringify!
+      );
       setIndexStatus(status);
+
+      // ✅ Cache the status
+      sessionStorage.setItem(
+        `index-status-${selectedProjectId}`,
+        JSON.stringify(status)
+      );
     } catch (error) {
       console.error("❌ [ProjectInfo] Failed to fetch index status:", error);
     }
@@ -68,18 +99,19 @@ const ProjectInfo: React.FC = () => {
 
     setIsIndexing(true);
     try {
-      // Trigger indexing via extension command
-      (window as any).vscode.postMessage({
+      console.log(
+        "📂 [ProjectInfo] Triggering indexing for project:",
+        selectedProjectId
+      );
+
+      vscodeAPI.postMessage({
         command: "indexWorkspace",
+        projectId: selectedProjectId,
       });
 
-      // Poll for status update
-      setTimeout(async () => {
-        await fetchIndexStatus();
-        setIsIndexing(false);
-      }, 2000);
+      // ✅ That's it! The useEffect listener will handle completion
     } catch (error) {
-      console.error("Failed to trigger indexing:", error);
+      console.error("❌ [ProjectInfo] Failed to trigger indexing:", error);
       setIsIndexing(false);
     }
   };
@@ -126,12 +158,24 @@ const ProjectInfo: React.FC = () => {
 
   const statusDisplay = getStatusDisplay();
 
-  // Button text based on status
   const getButtonText = () => {
-    if (isIndexing) return "⏳ Indexing...";
-    if (!indexStatus || indexStatus.status === "not_indexed")
+    if (isIndexing) {
+      if (indexStatus?.files_count) {
+        return `⏳ Indexing ${indexStatus.files_count} files...`;
+      }
+      return "⏳ Indexing...";
+    }
+
+    if (!indexStatus || indexStatus.status === "not_indexed") {
       return "📂 Index Now";
-    return "🔄 Re-index";
+    }
+
+    if (indexStatus.status === "stale") {
+      return "🔄 Re-index"; // ← Outdated, should refresh
+    }
+
+    // ✅ Change this line:
+    return "✅ Indexed"; // ← Fresh, up to date!
   };
 
   return (
@@ -140,7 +184,6 @@ const ProjectInfo: React.FC = () => {
         <div className="project-info-details">
           <span className="project-icon">📂</span>
           <span className="project-name">{selectedProject.name}</span>
-          <span className="project-id">({selectedProject.id})</span>
           <span className="project-separator">•</span>
           <span
             className="project-status"
