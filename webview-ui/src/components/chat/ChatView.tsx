@@ -6,6 +6,7 @@ import { Message } from "../../types/index";
 import { sendMessage } from "../../services/apiService";
 import { vscodeAPI } from "../../utils/vscodeApi";
 import "./ChatView.css";
+import { diffLines } from "diff";
 
 // ✅ File context interface
 interface FileContext {
@@ -17,11 +18,25 @@ interface FileContext {
   lineCount?: number;
 }
 
+interface ExtendedMessage extends Message {
+  response_type?: "chat" | "edit" | "create";
+  original_content?: string;
+  new_content?: string;
+  diff?: string;
+  file_path?: string;
+  tokens_used?: any;
+}
+
 const ChatView: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ExtendedMessage[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<{
+    messageId: string;
+    type: "edit" | "create";
+    data: any;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [fileContext, setFileContext] = useState<FileContext | null>(null);
@@ -79,7 +94,7 @@ const ChatView: React.FC = () => {
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
 
-    const userMessage: Message = {
+    const userMessage: ExtendedMessage = {
       id: Date.now().toString(),
       content: inputValue,
       sender: "user",
@@ -98,14 +113,81 @@ const ChatView: React.FC = () => {
 
       const response = await sendMessage(userMessage.content, contextToSend);
 
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: response.message,
-        sender: "ai",
-        timestamp: new Date().toISOString(),
-      };
+      console.log("🎯 [ChatView] Response type:", response.response_type);
 
-      setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      // ✅ NEW: Handle different response types
+      if (response.response_type === "edit" && response.diff) {
+        console.log("✏️ [ChatView] EDIT mode - showing diff approval");
+
+        // Show approval UI
+        setPendingApproval({
+          messageId: (Date.now() + 1).toString(),
+          type: "edit",
+          data: {
+            message: response.message,
+            original_content: response.original_content,
+            new_content: response.new_content,
+            diff: response.diff,
+            file_path: response.file_path,
+            tokens_used: response.tokens_used,
+          },
+        });
+
+        // Add a message indicating approval needed
+        const aiMessage: ExtendedMessage = {
+          id: (Date.now() + 1).toString(),
+          content: response.message,
+          sender: "ai",
+          timestamp: new Date().toISOString(),
+          response_type: "edit",
+          original_content: response.original_content,
+          new_content: response.new_content,
+          diff: response.diff,
+          file_path: response.file_path,
+          tokens_used: response.tokens_used,
+        };
+
+        setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      } else if (response.response_type === "create" && response.new_content) {
+        console.log("📝 [ChatView] CREATE mode - showing file preview");
+
+        // Show approval UI
+        setPendingApproval({
+          messageId: (Date.now() + 1).toString(),
+          type: "create",
+          data: {
+            message: response.message,
+            new_content: response.new_content,
+            file_path: response.file_path,
+            tokens_used: response.tokens_used,
+          },
+        });
+
+        // Add a message indicating approval needed
+        const aiMessage: ExtendedMessage = {
+          id: (Date.now() + 1).toString(),
+          content: response.message,
+          sender: "ai",
+          timestamp: new Date().toISOString(),
+          response_type: "create",
+          new_content: response.new_content,
+          file_path: response.file_path,
+          tokens_used: response.tokens_used,
+        };
+
+        setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      } else {
+        // Regular chat response
+        const aiMessage: ExtendedMessage = {
+          id: (Date.now() + 1).toString(),
+          content: response.message,
+          sender: "ai",
+          timestamp: new Date().toISOString(),
+          response_type: "chat",
+        };
+
+        setMessages((prevMessages) => [...prevMessages, aiMessage]);
+      }
     } catch (err: unknown) {
       let errorMessage = "Failed to send message";
 
@@ -167,6 +249,110 @@ const ChatView: React.FC = () => {
 
   const fileInfo = getFileInfo();
 
+  // ✅ NEW: Handle approval actions
+  const handleApprove = async () => {
+    if (!pendingApproval) return;
+
+    console.log("✅ [ChatView] User approved:", pendingApproval.type);
+
+    if (pendingApproval.type === "edit") {
+      // Apply the edit to the file
+      const { new_content, file_path } = pendingApproval.data;
+
+      try {
+        console.log("📝 [ChatView] Applying edit to file:", file_path);
+
+        // ✅ NEW: Send write command to extension
+        vscodeAPI.postMessage({
+          command: "writeFile",
+          filePath: file_path,
+          content: new_content,
+        });
+
+        // Clear pending approval
+        setPendingApproval(null);
+      } catch (error) {
+        console.error("❌ [ChatView] Failed to apply edit:", error);
+        setError("Failed to apply changes to file");
+      }
+    } else if (pendingApproval.type === "create") {
+      // Create the new file
+      const { new_content, file_path } = pendingApproval.data;
+
+      try {
+        console.log("📝 [ChatView] Creating file:", file_path);
+
+        // ✅ NEW: Send create command to extension
+        vscodeAPI.postMessage({
+          command: "createFile",
+          filePath: file_path,
+          content: new_content,
+        });
+
+        // Clear pending approval
+        setPendingApproval(null);
+      } catch (error) {
+        console.error("❌ [ChatView] Failed to create file:", error);
+        setError("Failed to create file");
+      }
+    }
+  };
+
+  const handleReject = () => {
+    console.log("❌ [ChatView] User rejected changes");
+    setPendingApproval(null);
+  };
+
+  // ✅ NEW: Render diff view
+  const renderDiff = (original: string, modified: string) => {
+    const diff = diffLines(original, modified);
+
+    return (
+      <div className="diff-view">
+        {diff.map((part, index) => {
+          const className = part.added
+            ? "diff-added"
+            : part.removed
+            ? "diff-removed"
+            : "diff-unchanged";
+
+          return (
+            <div key={index} className={className}>
+              {part.value.split("\n").map((line, lineIndex) => (
+                <div key={lineIndex} className="diff-line">
+                  <span className="diff-marker">
+                    {part.added ? "+" : part.removed ? "-" : " "}
+                  </span>
+                  <span className="diff-content">{line}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const handleViewDiff = (message: ExtendedMessage) => {
+    console.log("📊 [ChatView] Opening diff view in VS Code");
+
+    if (
+      !message.original_content ||
+      !message.new_content ||
+      !message.file_path
+    ) {
+      console.error("❌ Missing diff data");
+      return;
+    }
+
+    vscodeAPI.postMessage({
+      command: "viewDiff",
+      filePath: message.file_path,
+      originalContent: message.original_content,
+      newContent: message.new_content,
+    });
+  };
+
   return (
     <div className="chat-view">
       {/* ✅ Chat Header with Clear Button */}
@@ -200,30 +386,121 @@ const ChatView: React.FC = () => {
           <div key={message.id} className={`message ${message.sender}`}>
             <div className="message-content">
               {message.sender === "ai" ? (
-                <ReactMarkdown
-                  components={{
-                    code({ node, className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "");
-                      const isInline = !match;
+                <>
+                  <ReactMarkdown
+                    components={{
+                      code({ node, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || "");
+                        const isInline = !match;
 
-                      return isInline ? (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      ) : (
+                        return isInline ? (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        ) : (
+                          <SyntaxHighlighter
+                            style={vscDarkPlus}
+                            language={match[1]}
+                            PreTag="div"
+                          >
+                            {String(children).replace(/\n$/, "")}
+                          </SyntaxHighlighter>
+                        );
+                      },
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+
+                  {/* ✅ NEW: Show diff for edit responses */}
+                  {message.response_type === "edit" &&
+                    message.original_content &&
+                    message.new_content && (
+                      <div className="diff-container">
+                        <div className="diff-header">
+                          <span className="diff-title">
+                            📝 Proposed Changes
+                          </span>
+                          <span className="diff-file">{message.file_path}</span>
+                        </div>
+                        {renderDiff(
+                          message.original_content,
+                          message.new_content
+                        )}
+                        {pendingApproval?.messageId === message.id && (
+                          <div className="diff-actions">
+                            <button
+                              className="view-diff-button"
+                              onClick={() => handleViewDiff(message)}
+                            >
+                              👁️ View Diff in Editor
+                            </button>
+                            <button
+                              className="approve-button"
+                              onClick={handleApprove}
+                            >
+                              ✅ Apply Changes
+                            </button>
+                            <button
+                              className="reject-button"
+                              onClick={handleReject}
+                            >
+                              ❌ Reject
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  {/* ✅ NEW: Show file preview for create responses */}
+                  {message.response_type === "create" &&
+                    message.new_content && (
+                      <div className="file-preview-container">
+                        <div className="file-preview-header">
+                          <span className="preview-title">
+                            📄 New File Preview
+                          </span>
+                          <span className="preview-file">
+                            {message.file_path}
+                          </span>
+                        </div>
                         <SyntaxHighlighter
                           style={vscDarkPlus}
-                          language={match[1]}
+                          language="typescript"
                           PreTag="div"
+                          customStyle={{ maxHeight: "400px", overflow: "auto" }}
                         >
-                          {String(children).replace(/\n$/, "")}
+                          {message.new_content}
                         </SyntaxHighlighter>
-                      );
-                    },
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
+                        {pendingApproval?.messageId === message.id && (
+                          <div className="file-preview-actions">
+                            <button
+                              className="approve-button"
+                              onClick={handleApprove}
+                            >
+                              ✅ Create File
+                            </button>
+                            <button
+                              className="reject-button"
+                              onClick={handleReject}
+                            >
+                              ❌ Cancel
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  {/* ✅ NEW: Show token usage if available */}
+                  {message.tokens_used && (
+                    <div className="token-usage">
+                      <span className="token-label">Tokens:</span>
+                      <span className="token-value">
+                        {message.tokens_used.total}
+                      </span>
+                    </div>
+                  )}
+                </>
               ) : (
                 <span className="content">{message.content}</span>
               )}

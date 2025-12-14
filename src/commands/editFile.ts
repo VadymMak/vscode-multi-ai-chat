@@ -69,6 +69,7 @@ export async function editFile(projectId: number | null): Promise<void> {
             project_id: projectId,
             file_path: filePath,
             instruction: instruction,
+            current_content: document.getText(),
           },
           {
             timeout: 90000, // 90 seconds for AI operations

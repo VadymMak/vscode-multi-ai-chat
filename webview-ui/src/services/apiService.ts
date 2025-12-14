@@ -184,7 +184,15 @@ export const sendMessage = async (
     fileContent?: string;
     selectedText?: string;
   }
-): Promise<{ message: string }> => {
+): Promise<{
+  message: string;
+  response_type?: "chat" | "edit" | "create";
+  original_content?: string;
+  new_content?: string;
+  diff?: string;
+  file_path?: string;
+  tokens_used?: any;
+}> => {
   try {
     console.log("📤 [apiService] Sending message:", message);
 
@@ -211,8 +219,15 @@ export const sendMessage = async (
 
     console.log("✅ [apiService] Response received:", response);
 
+    // ✅ NEW: Return full response with all fields
     return {
       message: response.message || "No response from AI",
+      response_type: response.response_type || "chat",
+      original_content: response.original_content,
+      new_content: response.new_content,
+      diff: response.diff,
+      file_path: response.file_path,
+      tokens_used: response.tokens_used,
     };
   } catch (error) {
     console.error("❌ [apiService] Send message error:", error);

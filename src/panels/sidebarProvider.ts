@@ -333,6 +333,113 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.window.showErrorMessage(message.text);
             break;
 
+          case "writeFile":
+            console.log("✏️ [SidebarProvider] Writing file:", message.filePath);
+            try {
+              // Resolve absolute path
+              const absolutePath = path.isAbsolute(message.filePath)
+                ? message.filePath
+                : path.join(
+                    vscode.workspace.workspaceFolders![0].uri.fsPath,
+                    message.filePath
+                  );
+
+              // Write file
+              fs.writeFileSync(absolutePath, message.content, "utf-8");
+
+              // ✅ Close diff editor
+              const { closeDiffEditor } = await import("../commands/viewDiff");
+              await closeDiffEditor(message.filePath);
+
+              // ✅ NEW: Open the real (updated) file
+              const fileUri = vscode.Uri.file(absolutePath);
+              const doc = await vscode.workspace.openTextDocument(fileUri);
+              await vscode.window.showTextDocument(doc, {
+                preview: false, // Don't use preview mode
+                preserveFocus: false, // Focus on the file
+              });
+
+              // Show success notification
+              vscode.window.showInformationMessage(
+                `✅ File edited: ${path.basename(message.filePath)}`
+              );
+
+              console.log(
+                "✅ [SidebarProvider] File written and opened successfully"
+              );
+            } catch (err) {
+              const error = err as Error;
+              console.error("❌ [SidebarProvider] Write failed:", error);
+              vscode.window.showErrorMessage(
+                `Failed to write file: ${error.message}`
+              );
+            }
+            break;
+
+          case "createFile":
+            console.log(
+              "📝 [SidebarProvider] Creating file:",
+              message.filePath
+            );
+            try {
+              // Resolve absolute path
+              const absolutePath = path.isAbsolute(message.filePath)
+                ? message.filePath
+                : path.join(
+                    vscode.workspace.workspaceFolders![0].uri.fsPath,
+                    message.filePath
+                  );
+
+              // Create directory if needed
+              const dirPath = path.dirname(absolutePath);
+              if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+              }
+
+              // Write file
+              fs.writeFileSync(absolutePath, message.content, "utf-8");
+
+              // Open file in editor
+              vscode.workspace.openTextDocument(absolutePath).then((doc) => {
+                vscode.window.showTextDocument(doc);
+              });
+
+              // Show success notification
+              vscode.window.showInformationMessage(
+                `✅ File created: ${path.basename(message.filePath)}`
+              );
+
+              console.log("✅ [SidebarProvider] File created successfully");
+            } catch (err) {
+              const error = err as Error;
+              console.error("❌ [SidebarProvider] Create failed:", error);
+              vscode.window.showErrorMessage(
+                `Failed to create file: ${error.message}`
+              );
+            }
+            break;
+
+          case "viewDiff":
+            console.log("📊 [SidebarProvider] Opening diff view");
+            try {
+              const { showDiffInEditor } = await import("../commands/viewDiff");
+
+              await showDiffInEditor(
+                message.filePath,
+                message.originalContent,
+                message.newContent
+              );
+
+              console.log("✅ [SidebarProvider] Diff view opened");
+            } catch (err) {
+              const error = err as Error;
+              console.error("❌ [SidebarProvider] Diff view failed:", error);
+              vscode.window.showErrorMessage(
+                `Failed to open diff view: ${error.message}`
+              );
+            }
+            break;
+
           default:
             console.log(
               `⚠️ [SidebarProvider] Unknown command: ${

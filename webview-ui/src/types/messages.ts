@@ -16,7 +16,8 @@ export type MessageType =
   | "startIndexing"
   | "getProjectIndexStatus"
   | "requestApproval" // NEW
-  | "approvalResponse"; // NEW
+  | "approvalResponse"
+  | "chatResponse";
 
 export interface BaseMessage {
   type: MessageType;
@@ -98,5 +99,27 @@ export type WebviewMessage =
   | ProjectDetectedMessage
   | StartIndexingMessage
   | GetProjectIndexStatusMessage
-  | RequestApprovalMessage // NEW
-  | ApprovalResponseMessage; // NEW
+  | RequestApprovalMessage
+  | ApprovalResponseMessage
+  | ChatResponseMessage;
+
+// Chat response messages (NEW)
+export interface ChatResponseMessage extends BaseMessage {
+  type: "chatResponse";
+  response: {
+    message: string;
+    chat_session_id?: string;
+    response_type: "chat" | "edit" | "create";
+    // For edit responses:
+    original_content?: string;
+    new_content?: string;
+    diff?: string;
+    file_path?: string;
+    tokens_used?: {
+      step1_gpt4o_mini?: number;
+      step2_prompt?: number;
+      step2_response?: number;
+      total?: number;
+    };
+  };
+}
