@@ -56,6 +56,38 @@ export function useAuth(): UseAuthReturn {
     verifyAuth();
   }, []); // ✅ Empty deps - run only once on mount
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+
+      if (message.command === "tokenExpired") {
+        console.log("🔓 [useAuth] Token expired, logging out");
+
+        // Clear all sessionStorage
+        (globalThis as any).sessionStorage?.removeItem(
+          "multi-ai-chat-auth-status"
+        );
+        (globalThis as any).sessionStorage?.removeItem("multi-ai-chat-user");
+
+        // Clear auth state
+        setAuthStatus("unauthenticated");
+        setUser(null);
+
+        // Show alert to user
+        vscodeAPI.postMessage({
+          command: "alert",
+          text: "Session expired. Please login again.",
+        });
+      }
+    };
+
+    (globalThis as any).window?.addEventListener("message", handleMessage);
+
+    return () => {
+      (globalThis as any).window?.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
   const checkAuth = async () => {
     try {
       const result = await apiService.checkAuth();

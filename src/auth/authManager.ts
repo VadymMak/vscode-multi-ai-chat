@@ -41,7 +41,7 @@ class AuthManager extends EventEmitter {
     if (!this.context) return;
 
     try {
-      this.token = (await this.context.secrets.get("jwt_token")) || null;
+      this.token = (await this.context.secrets.get("authToken")) || null;
       if (this.token) {
         logger.info("Token loaded from SecretStorage");
         this.authState = AuthState.LOGGED_IN;
@@ -83,7 +83,7 @@ class AuthManager extends EventEmitter {
       this.authState = AuthState.LOGGED_OUT;
 
       if (this.context) {
-        await this.context.secrets.delete("jwt_token");
+        await this.context.secrets.delete("authToken");
       }
 
       this.emit("logout");
@@ -102,7 +102,25 @@ class AuthManager extends EventEmitter {
   }
 
   public async getToken(): Promise<string | null> {
-    return this.token;
+    // ✅ ВСЕГДА берём fresh token из secrets
+    if (!this.context) {
+      return null;
+    }
+
+    try {
+      // Читаем из secrets (не из this.token!)
+      const freshToken = await this.context.secrets.get("authToken");
+
+      if (freshToken) {
+        // Update cache
+        this.token = freshToken;
+      }
+
+      return freshToken || null;
+    } catch (error) {
+      logger.error("Failed to get token from secrets", error as Error);
+      return null;
+    }
   }
 
   public async saveToken(token: string): Promise<void> {
@@ -111,7 +129,7 @@ class AuthManager extends EventEmitter {
     }
 
     try {
-      await this.context.secrets.store("jwt_token", token);
+      await this.context.secrets.store("authToken", token);
       this.token = token;
       logger.info("Token saved to SecretStorage");
     } catch (error) {

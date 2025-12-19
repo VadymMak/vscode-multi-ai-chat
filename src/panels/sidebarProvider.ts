@@ -233,11 +233,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             break;
 
           case "tokenUpdated":
-            console.log("🔑 [SidebarProvider] Storing token");
+            console.log("🔑 [SidebarProvider] Token update");
             if (message.token) {
+              // Login - save token and show project selection
               await this._context.secrets.store("authToken", message.token);
+              console.log("✅ [SidebarProvider] Token saved");
+              await this._showProjectSelectionNotification(webviewView.webview);
+            } else {
+              // Logout - just clear token (already done in logout case)
+              console.log("🚪 [SidebarProvider] Token cleared (logout)");
             }
-            await this._showProjectSelectionNotification(webviewView.webview);
             break;
 
           case "logout":
@@ -470,16 +475,42 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      // ✅ Get token from secrets (not AuthManager!)
       const token = await this._context.secrets.get("authToken");
       console.log("🔑 [SidebarProvider] Token:", token ? "EXISTS" : "NULL");
 
       if (token) {
+        // ✅ NEW: Check if token is expired
+        try {
+          const payload = JSON.parse(atob(token.split(".")[1]));
+          const now = Math.floor(Date.now() / 1000);
+
+          if (payload.exp && payload.exp < now) {
+            console.log("❌ [SidebarProvider] Token expired, clearing...");
+            await this._context.secrets.delete("authToken");
+
+            // Tell webview token expired
+            this._view.webview.postMessage({
+              command: "tokenExpired",
+            });
+            return;
+          }
+
+          console.log(
+            "✅ [SidebarProvider] Token valid until:",
+            new Date(payload.exp * 1000)
+          );
+        } catch (e) {
+          console.log("⚠️ [SidebarProvider] Failed to parse token:", e);
+          // If we can't parse, delete it
+          await this._context.secrets.delete("authToken");
+          return;
+        }
+
         this._view.webview.postMessage({
           command: "token",
           token: token,
         });
-        console.log("✅ [SidebarProvider] Token sent to webview");
+        console.log("✅ [SidebarProvider] Valid token sent to webview");
       }
     } catch (error) {
       console.error("❌ [SidebarProvider] Error sending token:", error);
@@ -554,6 +585,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           `✅ [SidebarProvider] Token verification:`,
           savedToken === newToken ? "✅ MATCH" : "❌ MISMATCH"
         );
+        // ✅ NEW: Send fresh token to webview immediately
+        webview.postMessage({
+          command: "token",
+          token: newToken,
+        });
+        console.log(`✅ [SidebarProvider] Fresh token sent to webview`);
       }
 
       webview.postMessage({
