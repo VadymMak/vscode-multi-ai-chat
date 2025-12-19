@@ -26,20 +26,24 @@ const pendingRequests: Record<string, any> = {};
   }
 });
 
+/**
+ * ✅ SIMPLIFIED: No token management here!
+ * Extension handles ALL token logic
+ */
 async function apiRequest(
   method: string,
   endpoint: string,
   data?: any
 ): Promise<any> {
-  const token = useAuthStore.getState().token;
   const requestId = `req_${++requestCounter}_${Date.now()}`;
 
-  console.log(`🔄 [ApiClient] ${method} ${endpoint}`, { hasToken: !!token });
+  console.log(`🔄 [ApiClient] ${method} ${endpoint}`, { requestId });
 
   return new Promise((resolve, reject) => {
     pendingRequests[requestId] = { resolve, reject };
 
-    // Send request to extension
+    // ✅ Send request to extension (NO TOKEN!)
+    // Extension will add token from AuthManager
     vscodeAPI.postMessage({
       command: "apiRequest",
       requestId,
@@ -47,11 +51,10 @@ async function apiRequest(
         method,
         endpoint,
         data,
-        token,
+        // ❌ NO TOKEN HERE! Extension handles it!
       },
     });
 
-    // Timeout after 60 seconds
     setTimeout(() => {
       if (pendingRequests[requestId]) {
         delete pendingRequests[requestId];
@@ -62,6 +65,9 @@ async function apiRequest(
 }
 
 export const apiService = {
+  /**
+   * ✅ SIMPLIFIED: Just call API, Extension handles token
+   */
   login: async (username: string, password: string): Promise<AuthResponse> => {
     console.log("🔧 apiService.login called");
 
@@ -70,34 +76,48 @@ export const apiService = {
       password,
     });
 
-    console.log("🔧 apiService.login response:", response);
+    console.log("🔧 apiService.login response received");
 
-    // Save token to Zustand store
-    useAuthStore.getState().setToken(response.access_token);
-    console.log("💾 Token saved to Zustand store");
+    // ✅ Just update UI state (not token storage!)
+    useAuthStore.getState().setAuthenticated(true);
+    useAuthStore.getState().setUser(response.user);
 
     return {
       user: response.user,
-      token: response.access_token,
+      token: response.access_token, // For compatibility, but not stored here
     };
   },
 
   logout: async (): Promise<{ success: boolean }> => {
-    // Clear token from Zustand store
-    useAuthStore.getState().clearToken();
-    // Clear project selection
+    console.log("🔓 apiService.logout called");
+
+    // ✅ Tell extension to clear token
+    vscodeAPI.postMessage({
+      command: "logout",
+    });
+
+    // Clear UI state
+    useAuthStore.getState().clearAuth();
     useProjectStore.getState().clearSelection();
+
     return { success: true };
   },
 
   checkAuth: async (): Promise<CheckAuthResponse> => {
     try {
       const response = await apiRequest("GET", "/auth/me");
+
+      // ✅ Update UI state
+      useAuthStore.getState().setAuthenticated(true);
+      useAuthStore.getState().setUser(response);
+
       return {
         isAuthenticated: true,
         user: response,
       };
     } catch (error) {
+      // Clear UI state if not authenticated
+      useAuthStore.getState().clearAuth();
       return {
         isAuthenticated: false,
         user: null,
@@ -112,12 +132,10 @@ export const apiService = {
       const response = await apiRequest("GET", "/projects");
       console.log("📂 [apiService] Projects received:", response);
 
-      // Handle both array and object with projects key
       const projects = Array.isArray(response)
         ? response
         : response.projects || [];
 
-      // Save to Zustand store
       useProjectStore.getState().setProjects(projects);
 
       return projects;
@@ -196,7 +214,6 @@ export const sendMessage = async (
   try {
     console.log("📤 [apiService] Sending message:", message);
 
-    // Get selected project
     const projectId = useProjectStore.getState().selectedProjectId;
     console.log("📂 [apiService] Project ID:", projectId);
 
@@ -208,7 +225,6 @@ export const sendMessage = async (
       });
     }
 
-    // Include project_id in request
     const response = await apiRequest("POST", "/vscode/chat", {
       message: message,
       project_id: projectId,
@@ -219,7 +235,6 @@ export const sendMessage = async (
 
     console.log("✅ [apiService] Response received:", response);
 
-    // ✅ NEW: Return full response with all fields
     return {
       message: response.message || "No response from AI",
       response_type: response.response_type || "chat",
@@ -233,7 +248,8 @@ export const sendMessage = async (
     console.error("❌ [apiService] Send message error:", error);
 
     if (error instanceof Error && error.message.includes("401")) {
-      useAuthStore.getState().clearToken();
+      // ✅ Clear UI state on 401
+      useAuthStore.getState().clearAuth();
     }
 
     throw error;

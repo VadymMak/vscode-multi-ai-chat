@@ -1,8 +1,8 @@
 # Exclude node_modules and build artifacts
 node_modules
-dist
-out
-build
+# dist
+# out
+# build
 
 # Exclude test and coverage directories
 test

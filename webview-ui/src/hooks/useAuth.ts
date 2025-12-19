@@ -15,103 +15,46 @@ export interface UseAuthReturn {
 export function useAuth(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus>("checking");
-  const clearToken = useAuthStore((state) => state.clearToken);
-  const token = useAuthStore((state) => state.token);
 
   // ✅ Track if we just logged in (to prevent double detection)
   const justLoggedIn = useRef(false);
 
-  /// ✅ Check auth ONLY if token exists
+  // ✅ Check auth on mount
   useEffect(() => {
-    const verifyToken = async () => {
-      if (token) {
-        // ✅ NEW: Check if we were authenticated in this session
-        const wasAuthenticated = sessionStorage.getItem(
-          "multi-ai-chat-auth-status"
+    const verifyAuth = async () => {
+      // ✅ Check cached auth state first (instant display!)
+      const wasAuthenticated = (globalThis as any).sessionStorage?.getItem(
+        "multi-ai-chat-auth-status"
+      );
+
+      if (wasAuthenticated === "authenticated") {
+        console.log("⚡ Using cached auth state - instant display");
+        setAuthStatus("authenticated");
+
+        // Load cached user
+        const cachedUser = (globalThis as any).sessionStorage?.getItem(
+          "multi-ai-chat-user"
         );
-
-        if (wasAuthenticated === "authenticated") {
-          // ✅ Trust sessionStorage, set state immediately (no flash!)
-          console.log("⚡ Using cached auth state - instant display");
-          setAuthStatus("authenticated");
-
-          // ✅ Load cached user if available
-          const cachedUser = sessionStorage.getItem("multi-ai-chat-user");
-          if (cachedUser) {
-            try {
-              setUser(JSON.parse(cachedUser));
-            } catch (e) {
-              console.error("Failed to parse cached user:", e);
-            }
+        if (cachedUser) {
+          try {
+            setUser(JSON.parse(cachedUser));
+          } catch (e) {
+            console.error("Failed to parse cached user:", e);
           }
         }
 
-        console.log("🔍 Token exists, verifying with backend...");
-
-        // ✅ CRITICAL: Skip verification if we just logged in
-        if (justLoggedIn.current) {
-          console.log("⏭️ Skipping verification - just logged in");
-          justLoggedIn.current = false; // Reset flag
-          return;
-        }
-
-        try {
-          const result = await apiService.checkAuth();
-          if (result.isAuthenticated) {
-            setUser(result.user);
-            setAuthStatus("authenticated");
-
-            // ✅ Cache auth state
-            sessionStorage.setItem(
-              "multi-ai-chat-auth-status",
-              "authenticated"
-            );
-            sessionStorage.setItem(
-              "multi-ai-chat-user",
-              JSON.stringify(result.user)
-            );
-
-            console.log("✅ Token verified, user authenticated");
-
-            // ✅ Send tokenValidated (this is a RESTORED session)
-            console.log("📤 Sending tokenValidated (restored session)");
-            vscodeAPI.postMessage({
-              command: "tokenValidated",
-            });
-          } else {
-            console.log("❌ Token invalid, clearing...");
-            clearToken();
-            vscodeAPI.setState({ authToken: null });
-            vscodeAPI.postMessage({ command: "tokenUpdated", token: null });
-            setAuthStatus("unauthenticated");
-
-            // ✅ Clear cache
-            sessionStorage.removeItem("multi-ai-chat-auth-status");
-            sessionStorage.removeItem("multi-ai-chat-user");
-          }
-        } catch (error) {
-          console.error("❌ Token verification failed:", error);
-          clearToken();
-          vscodeAPI.setState({ authToken: null });
-          vscodeAPI.postMessage({ command: "tokenUpdated", token: null });
-          setAuthStatus("unauthenticated");
-
-          // ✅ Clear cache
-          sessionStorage.removeItem("multi-ai-chat-auth-status");
-          sessionStorage.removeItem("multi-ai-chat-user");
-        }
-      } else {
-        console.log("📭 No token found, showing login form");
-        setAuthStatus("unauthenticated");
-
-        // ✅ Clear cache
-        sessionStorage.removeItem("multi-ai-chat-auth-status");
-        sessionStorage.removeItem("multi-ai-chat-user");
+        // ✅ Skip backend verification - Extension already verified token
+        console.log("✅ Auth restored from cache");
+        return;
       }
+
+      // ✅ No cached auth - wait for Extension to send token
+      console.log("📭 No cached auth, waiting for extension...");
+      setAuthStatus("unauthenticated");
     };
 
-    verifyToken();
-  }, [token, clearToken]);
+    verifyAuth();
+  }, []); // ✅ Empty deps - run only once on mount
 
   const checkAuth = async () => {
     try {
@@ -145,8 +88,11 @@ export function useAuth(): UseAuthReturn {
       setUser(response.user);
       setAuthStatus("authenticated");
 
-      sessionStorage.setItem("multi-ai-chat-auth-status", "authenticated");
-      sessionStorage.setItem(
+      (globalThis as any).sessionStorage?.setItem(
+        "multi-ai-chat-auth-status",
+        "authenticated"
+      );
+      (globalThis as any).sessionStorage?.setItem(
         "multi-ai-chat-user",
         JSON.stringify(response.user)
       );
@@ -176,10 +122,14 @@ export function useAuth(): UseAuthReturn {
       setUser(null);
       setAuthStatus("unauthenticated");
 
-      sessionStorage.removeItem("multi-ai-chat-auth-status");
-      sessionStorage.removeItem("multi-ai-chat-user");
-      sessionStorage.removeItem("multi-ai-chat-projects");
-      sessionStorage.removeItem("multi-ai-chat-selected-project");
+      (globalThis as any).sessionStorage?.removeItem(
+        "multi-ai-chat-auth-status"
+      );
+      (globalThis as any).sessionStorage?.removeItem("multi-ai-chat-user");
+      (globalThis as any).sessionStorage?.removeItem("multi-ai-chat-projects");
+      (globalThis as any).sessionStorage?.removeItem(
+        "multi-ai-chat-selected-project"
+      );
 
       console.log("🗑️ Clearing token from VS Code State");
       vscodeAPI.setState({ authToken: null });

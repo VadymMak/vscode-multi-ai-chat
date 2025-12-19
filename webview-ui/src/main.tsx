@@ -11,30 +11,22 @@ function AppLoader() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // ✅ Try to restore token from VS Code State
-    const state = vscodeAPI.getState();
-    if (state?.authToken) {
-      console.log("🚀 [main] Token found in state");
-      useAuthStore.getState().setToken(state.authToken);
-      setIsReady(true);
-      return;
-    }
-
-    console.log("📭 [main] No token in state, waiting for extension...");
+    // ✅ Check if already authenticated (from Extension)
+    console.log("📭 [main] Waiting for extension...");
 
     // ✅ Wait for token from extension (max 1 second)
     const timeout = setTimeout(() => {
-      console.log("⏱️ [main] Timeout - no token from extension");
+      console.log("⏱️ [main] Timeout - proceeding without token");
       setIsReady(true);
     }, 1000);
 
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
 
-      if (message.command === "tokenUpdated" && message.token) {
+      if (message.command === "token" && message.token) {
         console.log("🔑 [main] Token received from extension during init");
-        vscodeAPI.setState({ authToken: message.token });
-        useAuthStore.getState().setToken(message.token);
+        // ✅ FIXED: Just mark as authenticated, don't store token
+        useAuthStore.getState().setAuthenticated(true);
         clearTimeout(timeout);
         setIsReady(true);
       }
@@ -42,30 +34,40 @@ function AppLoader() {
 
     window.addEventListener("message", messageHandler);
 
+    // ✅ Tell extension we're ready
+    vscodeAPI.postMessage({ command: "webviewReady" });
+
     return () => {
       clearTimeout(timeout);
       window.removeEventListener("message", messageHandler);
     };
   }, []);
 
-  // ✅ Listen for token updates after app is ready
+  // ✅ Listen for updates after app is ready
   useEffect(() => {
     if (!isReady) return;
 
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
 
-      if (message.command === "tokenUpdated") {
-        console.log("🔑 [main] Token updated from extension");
-        if (message.token) {
-          vscodeAPI.setState({ authToken: message.token });
-          useAuthStore.getState().setToken(message.token);
-          console.log("💾 [main] Token saved to state and store");
-        } else {
-          vscodeAPI.setState({ authToken: null });
-          useAuthStore.getState().setToken(null);
-          console.log("🗑️ [main] Token cleared from state and store");
-        }
+      switch (message.command) {
+        case "token":
+          console.log("🔑 [main] Token received from extension");
+          useAuthStore.getState().setAuthenticated(true);
+          break;
+
+        case "tokenUpdated":
+          console.log("🔑 [main] Token updated from extension");
+          useAuthStore.getState().setAuthenticated(true);
+          break;
+
+        case "logoutComplete":
+          console.log("🚪 [main] Logout complete");
+          useAuthStore.getState().clearAuth();
+          break;
+
+        default:
+          break;
       }
     };
 

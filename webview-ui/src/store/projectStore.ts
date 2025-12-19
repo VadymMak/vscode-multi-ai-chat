@@ -131,8 +131,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 (() => {
   try {
     // Load from sessionStorage on init
-    const savedProjects = sessionStorage.getItem("multi-ai-chat-projects");
-    const savedProjectId = sessionStorage.getItem(
+    const savedProjects = (globalThis as any).sessionStorage?.getItem(
+      "multi-ai-chat-projects"
+    );
+    const savedProjectId = (globalThis as any).sessionStorage?.getItem(
       "multi-ai-chat-selected-project"
     );
 
@@ -157,14 +159,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Subscribe to changes and save to sessionStorage
     useProjectStore.subscribe((state) => {
       if (state.projects.length > 0) {
-        sessionStorage.setItem(
+        (globalThis as any).sessionStorage?.setItem(
           "multi-ai-chat-projects",
           JSON.stringify(state.projects)
         );
       }
 
       if (state.selectedProjectId) {
-        sessionStorage.setItem(
+        (globalThis as any).sessionStorage?.setItem(
           "multi-ai-chat-selected-project",
           state.selectedProjectId.toString()
         );

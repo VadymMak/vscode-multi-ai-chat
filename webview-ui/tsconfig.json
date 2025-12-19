@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ESNext", // Use the latest ECMAScript features
     "module": "ESNext", // Use ESNext module system
-    "lib": ["DOM", "DOM.Iterable", "ESNext"], // Include necessary libraries
+    "lib": ["ES2020", "DOM", "DOM.Iterable", "ESNext"], // Include necessary libraries
     "jsx": "react-jsx", // Use the new JSX transform
     "strict": true, // Enable all strict type-checking options
     "esModuleInterop": true, // Enables emit interoperability between CommonJS and ES Modules

@@ -24,7 +24,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private readonly _authManager: AuthManager;
   private _currentProjectId: number | null = null;
 
-  // ✅ NEW: Approval callback system (from MainPanel)
   private static approvalCallbacks: Map<
     string,
     (response: any) => void
@@ -60,8 +59,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         if (choice === "Select Project") {
           console.log("✅ [SidebarProvider] User chose: Select Project");
-
-          // ✅ Fetch projects and show QuickPick
           await this._showProjectQuickPick(webview);
         } else if (choice === "Create New") {
           console.log("✅ [SidebarProvider] User chose: Create New");
@@ -75,19 +72,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // ✅ ADD THIS NEW METHOD:
-  // ✅ FIXED VERSION:
+  // File: vscode-extension/src/panels/sidebarProvider.ts
+
   private async _showProjectQuickPick(webview: vscode.Webview) {
     try {
       const axios = require("axios");
-      const token = await this._authManager.getToken();
+
+      // ✅ FIXED: Get token from secrets directly (same as _handleApiRequest)
+      const token = await this._context.secrets.get("authToken");
+
+      console.log(
+        `🔑 [SidebarProvider] Token for projects:`,
+        token ? token.substring(0, 30) + "..." : "NO TOKEN"
+      );
 
       if (!token) {
         vscode.window.showErrorMessage("Not authenticated");
         return;
       }
 
-      // Fetch projects from backend
       const response = await axios({
         method: "GET",
         url: "https://multi-ai-chat-production.up.railway.app/api/projects",
@@ -104,12 +107,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         return;
       }
 
-      // ✅ FIXED: Define interface for QuickPick items
       interface ProjectQuickPickItem extends vscode.QuickPickItem {
         projectId: number;
       }
 
-      // Show QuickPick with proper typing
       const items: ProjectQuickPickItem[] = projects.map((p: any) => ({
         label: `📂 ${p.name}`,
         description: p.description || "",
@@ -128,21 +129,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           "✅ [SidebarProvider] Project selected:",
           selected.projectId
         );
-
-        // Store project ID
         this._currentProjectId = selected.projectId;
 
-        // Update extension state
         const { setCurrentProjectId } = await import("../extension");
         setCurrentProjectId(selected.projectId);
 
-        // Notify webview
         webview.postMessage({
           command: "projectUpdated",
           projectId: selected.projectId,
         });
 
-        // ✅ ADD THIS: Show confirmation notification
         vscode.window.showInformationMessage(
           `✅ Project selected: ${selected.label.replace("📂 ", "")}`
         );
@@ -156,12 +152,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // ✅ NEW: Request approval (from MainPanel)
   public static async requestApproval(approval: any): Promise<any> {
     console.log("🟡 [SidebarProvider] Requesting approval:", approval.id);
 
-    // Find the active sidebar instance
-    // Note: We'll need to store the instance
     if (!SidebarProvider._instance?._view) {
       throw new Error("SidebarProvider not initialized");
     }
@@ -185,7 +178,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  // ✅ Store singleton instance for static methods
   private static _instance?: SidebarProvider;
 
   public resolveWebviewView(
@@ -194,18 +186,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken
   ) {
     this._view = webviewView;
-    SidebarProvider._instance = this; // Store instance
+    SidebarProvider._instance = this;
     (webviewView as any).retainContextWhenHidden = true;
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(this._extensionUri, "webview-ui", "dist"),
       ],
+      portMapping: [
+        {
+          webviewPort: 5173,
+          extensionHostPort: 5173,
+        },
+      ],
     };
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    // Handle messages from webview
     webviewView.webview.onDidReceiveMessage(
       async (message) => {
         console.log(
@@ -232,9 +229,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             if (message.token) {
               await this._context.secrets.store("authToken", message.token);
             }
-            // ✅ REPLACE THIS LINE:
-            // Note: Project selection now handled by webview UI
-            // WITH:
             await this._showProjectSelectionNotification(webviewView.webview);
             break;
 
@@ -243,16 +237,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             if (message.token) {
               await this._context.secrets.store("authToken", message.token);
             }
-            // ✅ REPLACE THIS LINE:
-            // Note: Project selection now handled by webview UI
-            // WITH:
             await this._showProjectSelectionNotification(webviewView.webview);
             break;
 
           case "logout":
             console.log("🚪 [SidebarProvider] Clearing token");
             await this._context.secrets.delete("authToken");
-            this._currentProjectId = null; // ✅ ADD THIS LINE
+            this._currentProjectId = null;
             break;
 
           case "getFileContext":
@@ -271,18 +262,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
             break;
 
-          // ✅ NEW: From MainPanel
           case "approvalResponse":
             console.log("🟢 [SidebarProvider] Approval response received");
             this._handleApprovalResponse(message.response);
             break;
 
-          // ✅ NEW: From MainPanel
           case "sendMessage":
             logger.info(`Message from webview: ${message.text}`);
             break;
 
-          // ✅ NEW: From MainPanel
           case "indexWorkspace":
             logger.info(`📂 Index workspace for project ${message.projectId}`);
             try {
@@ -316,10 +304,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
             break;
 
-          // ✅ NEW: From MainPanel
           case "projectSelected":
             logger.info(`📂 Project selected: ${message.projectId}`);
-            this._currentProjectId = message.projectId; // ✅ ADD THIS LINE
+            this._currentProjectId = message.projectId;
             try {
               const { setCurrentProjectId } = await import("../extension");
               setCurrentProjectId(message.projectId);
@@ -328,7 +315,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
             break;
 
-          // ✅ NEW: From MainPanel
           case "alert":
             vscode.window.showErrorMessage(message.text);
             break;
@@ -336,7 +322,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           case "writeFile":
             console.log("✏️ [SidebarProvider] Writing file:", message.filePath);
             try {
-              // Resolve absolute path
               const absolutePath = path.isAbsolute(message.filePath)
                 ? message.filePath
                 : path.join(
@@ -344,26 +329,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     message.filePath
                   );
 
-              // Write file
               fs.writeFileSync(absolutePath, message.content, "utf-8");
 
-              // ✅ Close diff editor
               const { closeDiffEditor } = await import("../commands/viewDiff");
               await closeDiffEditor(message.filePath);
 
-              // ✅ NEW: Open the real (updated) file
               const fileUri = vscode.Uri.file(absolutePath);
               const doc = await vscode.workspace.openTextDocument(fileUri);
               await vscode.window.showTextDocument(doc, {
-                preview: false, // Don't use preview mode
-                preserveFocus: false, // Focus on the file
+                preview: false,
+                preserveFocus: false,
               });
 
-              // Show success notification
               vscode.window.showInformationMessage(
                 `✅ File edited: ${path.basename(message.filePath)}`
               );
-
               console.log(
                 "✅ [SidebarProvider] File written and opened successfully"
               );
@@ -382,7 +362,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               message.filePath
             );
             try {
-              // Resolve absolute path
               const absolutePath = path.isAbsolute(message.filePath)
                 ? message.filePath
                 : path.join(
@@ -390,25 +369,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     message.filePath
                   );
 
-              // Create directory if needed
               const dirPath = path.dirname(absolutePath);
               if (!fs.existsSync(dirPath)) {
                 fs.mkdirSync(dirPath, { recursive: true });
               }
 
-              // Write file
               fs.writeFileSync(absolutePath, message.content, "utf-8");
 
-              // Open file in editor
               vscode.workspace.openTextDocument(absolutePath).then((doc) => {
                 vscode.window.showTextDocument(doc);
               });
 
-              // Show success notification
               vscode.window.showInformationMessage(
                 `✅ File created: ${path.basename(message.filePath)}`
               );
-
               console.log("✅ [SidebarProvider] File created successfully");
             } catch (err) {
               const error = err as Error;
@@ -423,13 +397,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             console.log("📊 [SidebarProvider] Opening diff view");
             try {
               const { showDiffInEditor } = await import("../commands/viewDiff");
-
               await showDiffInEditor(
                 message.filePath,
                 message.originalContent,
                 message.newContent
               );
-
               console.log("✅ [SidebarProvider] Diff view opened");
             } catch (err) {
               const error = err as Error;
@@ -460,8 +432,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           "👁️ [SidebarProvider] Webview became visible, restoring project:",
           this._currentProjectId
         );
-
-        // Re-send project selection to webview
         webviewView.webview.postMessage({
           command: "projectUpdated",
           projectId: this._currentProjectId,
@@ -474,7 +444,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }, 500);
   }
 
-  // ✅ NEW: Handle approval response (from MainPanel)
   private _handleApprovalResponse(response: any): void {
     console.log(
       "🟡 [SidebarProvider] Handling approval response:",
@@ -501,7 +470,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     try {
-      const token = await this._authManager.getToken();
+      // ✅ Get token from secrets (not AuthManager!)
+      const token = await this._context.secrets.get("authToken");
       console.log("🔑 [SidebarProvider] Token:", token ? "EXISTS" : "NULL");
 
       if (token) {
@@ -518,10 +488,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private async _handleApiRequest(message: any, webview: vscode.Webview) {
     const { requestId, data } = message;
-    const { method, endpoint, data: requestData, token } = data;
+    const { method, endpoint, data: requestData } = data;
 
     try {
       const axios = require("axios");
+      console.log(`📤 [SidebarProvider] API ${method} ${endpoint}`);
+
+      // ✅ CRITICAL FIX: Get token from secrets (not AuthManager!)
+      const authToken = await this._context.secrets.get("authToken");
+      console.log(
+        `🔑 [SidebarProvider] Using token from secrets:`,
+        authToken ? authToken.substring(0, 30) + "..." : "NO TOKEN"
+      );
 
       const config: any = {
         method: method,
@@ -537,18 +515,46 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         config.data = formData.toString();
         config.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        console.log(`🔐 [SidebarProvider] Login request (no token needed)`);
       } else {
         config.headers["Content-Type"] = "application/json";
+
+        if (authToken) {
+          config.headers.Authorization = `Bearer ${authToken}`;
+          console.log(`🔑 [SidebarProvider] Added Authorization header`);
+        } else {
+          console.warn(
+            `⚠️ [SidebarProvider] No token available for ${endpoint}`
+          );
+        }
+
         if (requestData) {
           config.data = requestData;
         }
       }
 
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-
+      console.log(`📡 [SidebarProvider] Making request...`);
       const response = await axios(config);
+      console.log(`✅ [SidebarProvider] Response: ${response.status}`);
+
+      if (endpoint === "/auth/login" && response.data.access_token) {
+        const newToken = response.data.access_token;
+        console.log(`🔐 [SidebarProvider] Login successful!`);
+        console.log(
+          `🔑 [SidebarProvider] New token:`,
+          newToken.substring(0, 30) + "..."
+        );
+
+        await this._context.secrets.store("authToken", newToken);
+        console.log(`✅ [SidebarProvider] Token saved to secrets`);
+
+        // ✅ Verify
+        const savedToken = await this._context.secrets.get("authToken");
+        console.log(
+          `✅ [SidebarProvider] Token verification:`,
+          savedToken === newToken ? "✅ MATCH" : "❌ MISMATCH"
+        );
+      }
 
       webview.postMessage({
         command: "apiResponse",
@@ -558,6 +564,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       const error = err as any;
       console.error("❌ [SidebarProvider] API error:", error.message || error);
+
+      if (error.response?.status === 401) {
+        console.log(`🔓 [SidebarProvider] 401 - clearing token`);
+        await this._context.secrets.delete("authToken");
+      }
 
       let errorMessage = "Request failed";
       if (error.response?.data?.detail) {
@@ -590,7 +601,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     html = html.replace(/\/assets\//g, `${assetUri.toString()}/`);
 
     const nonce = getNonce();
-    const metaTag = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src https://multi-ai-chat-production.up.railway.app; img-src ${webview.cspSource} https:; font-src ${webview.cspSource};">`;
+    const metaTag = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src https://multi-ai-chat-production.up.railway.app; img-src ${webview.cspSource} https:; font-src ${webview.cspSource}; frame-src 'self' https://multi-ai-chat-production.up.railway.app;">`;
 
     html = html.replace("<head>", `<head>${metaTag}`);
     html = html.replace(/<script/g, `<script nonce="${nonce}"`);

@@ -43,6 +43,42 @@ const ChatView: React.FC = () => {
   const [includeFile, setIncludeFile] = useState<boolean>(true);
 
   useEffect(() => {
+    try {
+      const savedMessages = (globalThis as any).sessionStorage?.getItem(
+        "multi-ai-chat-messages"
+      );
+      if (savedMessages) {
+        const parsed = JSON.parse(savedMessages);
+        setMessages(parsed);
+        console.log(
+          "💾 [ChatView] Restored messages from sessionStorage:",
+          parsed.length
+        );
+      }
+    } catch (e) {
+      console.error("❌ [ChatView] Failed to restore messages:", e);
+    }
+  }, []); // Run once on mount
+
+  // ✅ ADD: Save messages to sessionStorage when they change
+  useEffect(() => {
+    try {
+      if (messages.length > 0) {
+        (globalThis as any).sessionStorage?.setItem(
+          "multi-ai-chat-messages",
+          JSON.stringify(messages)
+        );
+        console.log(
+          "💾 [ChatView] Saved messages to sessionStorage:",
+          messages.length
+        );
+      }
+    } catch (e) {
+      console.error("❌ [ChatView] Failed to save messages:", e);
+    }
+  }, [messages]); // Run when messages change
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -79,6 +115,10 @@ const ChatView: React.FC = () => {
   const clearChat = () => {
     setMessages([]);
     setError(null);
+
+    // ✅ ADD: Clear from sessionStorage too!
+    (globalThis as any).sessionStorage?.removeItem("multi-ai-chat-messages");
+
     console.log("🧹 [ChatView] Chat cleared");
   };
 
