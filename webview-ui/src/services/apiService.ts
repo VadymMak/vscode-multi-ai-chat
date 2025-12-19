@@ -235,7 +235,7 @@ export const sendMessage = async (
 
     console.log("✅ [apiService] Response received:", response);
 
-    return {
+    const formattedResponse = {
       message: response.message || "No response from AI",
       response_type: response.response_type || "chat",
       original_content: response.original_content,
@@ -244,6 +244,10 @@ export const sendMessage = async (
       file_path: response.file_path,
       tokens_used: response.tokens_used,
     };
+
+    console.log("📤 [apiService] Formatted response:", formattedResponse);
+
+    return formattedResponse;
   } catch (error) {
     console.error("❌ [apiService] Send message error:", error);
 

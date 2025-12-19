@@ -171,8 +171,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
 
       SidebarProvider._instance?._view?.webview.postMessage({
-        type: "requestApproval",
-        approval: approval,
+        command: "apiResponse",
+        response: {
+          response_type: "requestApproval",
+          ...approval,
+        },
       });
       console.log("🟢 [SidebarProvider] Approval request sent to webview");
     });

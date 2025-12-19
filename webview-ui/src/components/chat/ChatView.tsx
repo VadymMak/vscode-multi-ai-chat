@@ -32,102 +32,80 @@ const ChatView: React.FC = () => {
   const [inputValue, setInputValue] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [pendingApproval, setPendingApproval] = useState<{
-    messageId: string;
-    type: "edit" | "create";
-    data: any;
-  } | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [fileContext, setFileContext] = useState<FileContext | null>(null);
   const [includeFile, setIncludeFile] = useState<boolean>(true);
 
   useEffect(() => {
-    try {
-      const savedMessages = (globalThis as any).sessionStorage?.getItem(
-        "multi-ai-chat-messages"
-      );
-      if (savedMessages) {
-        const parsed = JSON.parse(savedMessages);
-        setMessages(parsed);
-        console.log(
-          "💾 [ChatView] Restored messages from sessionStorage:",
-          parsed.length
-        );
-      }
-    } catch (e) {
-      console.error("❌ [ChatView] Failed to restore messages:", e);
+    const savedMessages = loadMessagesFromStorage();
+    if (savedMessages) {
+      setMessages(savedMessages);
     }
-  }, []); // Run once on mount
-
-  // ✅ ADD: Save messages to sessionStorage when they change
-  useEffect(() => {
-    try {
-      if (messages.length > 0) {
-        (globalThis as any).sessionStorage?.setItem(
-          "multi-ai-chat-messages",
-          JSON.stringify(messages)
-        );
-        console.log(
-          "💾 [ChatView] Saved messages to sessionStorage:",
-          messages.length
-        );
-      }
-    } catch (e) {
-      console.error("❌ [ChatView] Failed to save messages:", e);
-    }
-  }, [messages]); // Run when messages change
+  }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    saveMessagesToStorage(messages);
   }, [messages]);
 
-  // ✅ Request file context on mount and listen for updates
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
   useEffect(() => {
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
-
       if (message.command === "fileContext") {
-        console.log("📁 [ChatView] File context received:", message.data);
-        if (message.data && Object.keys(message.data).length > 0) {
-          setFileContext(message.data);
-        } else {
-          setFileContext(null);
-        }
+        setFileContext(message.data);
       }
     };
 
     window.addEventListener("message", messageHandler);
+    requestFileContext();
 
-    console.log("📤 [ChatView] Requesting initial file context...");
-    vscodeAPI.postMessage({ command: "getFileContext" });
-
-    return () => window.removeEventListener("message", messageHandler);
+    return () => {
+      window.removeEventListener("message", messageHandler);
+    };
   }, []);
 
-  // ✅ Refresh file context
-  const refreshFileContext = () => {
-    console.log("🔄 [ChatView] Refreshing file context...");
+  const loadMessagesFromStorage = () => {
+    const savedMessages = (globalThis as any).sessionStorage?.getItem(
+      "multi-ai-chat-messages"
+    );
+    return savedMessages ? JSON.parse(savedMessages) : null;
+  };
+
+  const saveMessagesToStorage = (messages: ExtendedMessage[]) => {
+    (globalThis as any).sessionStorage?.setItem(
+      "multi-ai-chat-messages",
+      JSON.stringify(messages)
+    );
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const requestFileContext = () => {
     vscodeAPI.postMessage({ command: "getFileContext" });
   };
 
-  // ✅ Clear chat
+  const refreshFileContext = () => {
+    requestFileContext();
+  };
+
   const clearChat = () => {
     setMessages([]);
     setError(null);
-
-    // ✅ ADD: Clear from sessionStorage too!
     (globalThis as any).sessionStorage?.removeItem("multi-ai-chat-messages");
-
-    console.log("🧹 [ChatView] Chat cleared");
   };
 
   const handleCopy = async (content: string) => {
     try {
       await navigator.clipboard.writeText(content);
-      console.log("✅ [ChatView] Copied to clipboard!");
     } catch (err) {
-      console.error("❌ [ChatView] Failed to copy:", err);
+      console.error("Failed to copy:", err);
     }
   };
 
@@ -139,6 +117,7 @@ const ChatView: React.FC = () => {
       content: inputValue,
       sender: "user",
       timestamp: new Date().toISOString(),
+      response_type: "chat",
     };
 
     setMessages((prevMessages) => [...prevMessages, userMessage]);
@@ -149,113 +128,50 @@ const ChatView: React.FC = () => {
     try {
       const contextToSend =
         includeFile && fileContext ? fileContext : undefined;
-      console.log("📤 [ChatView] Sending message with context:", contextToSend);
-
       const response = await sendMessage(userMessage.content, contextToSend);
 
-      console.log("🎯 [ChatView] Response type:", response.response_type);
+      const aiMessage: ExtendedMessage = {
+        id: (Date.now() + 1).toString(),
+        content: response.message,
+        sender: "ai",
+        timestamp: new Date().toISOString(),
+        response_type: response.response_type,
+        ...response,
+      };
 
-      // ✅ NEW: Handle different response types
-      if (response.response_type === "edit" && response.diff) {
-        console.log("✏️ [ChatView] EDIT mode - showing diff approval");
-
-        // Show approval UI
-        setPendingApproval({
-          messageId: (Date.now() + 1).toString(),
-          type: "edit",
-          data: {
-            message: response.message,
-            original_content: response.original_content,
-            new_content: response.new_content,
-            diff: response.diff,
-            file_path: response.file_path,
-            tokens_used: response.tokens_used,
-          },
-        });
-
-        // Add a message indicating approval needed
-        const aiMessage: ExtendedMessage = {
-          id: (Date.now() + 1).toString(),
-          content: response.message,
-          sender: "ai",
-          timestamp: new Date().toISOString(),
-          response_type: "edit",
-          original_content: response.original_content,
-          new_content: response.new_content,
-          diff: response.diff,
-          file_path: response.file_path,
-          tokens_used: response.tokens_used,
-        };
-
-        setMessages((prevMessages) => [...prevMessages, aiMessage]);
-      } else if (response.response_type === "create" && response.new_content) {
-        console.log("📝 [ChatView] CREATE mode - showing file preview");
-
-        // Show approval UI
-        setPendingApproval({
-          messageId: (Date.now() + 1).toString(),
-          type: "create",
-          data: {
-            message: response.message,
-            new_content: response.new_content,
-            file_path: response.file_path,
-            tokens_used: response.tokens_used,
-          },
-        });
-
-        // Add a message indicating approval needed
-        const aiMessage: ExtendedMessage = {
-          id: (Date.now() + 1).toString(),
-          content: response.message,
-          sender: "ai",
-          timestamp: new Date().toISOString(),
-          response_type: "create",
-          new_content: response.new_content,
-          file_path: response.file_path,
-          tokens_used: response.tokens_used,
-        };
-
-        setMessages((prevMessages) => [...prevMessages, aiMessage]);
-      } else {
-        // Regular chat response
-        const aiMessage: ExtendedMessage = {
-          id: (Date.now() + 1).toString(),
-          content: response.message,
-          sender: "ai",
-          timestamp: new Date().toISOString(),
-          response_type: "chat",
-        };
-
-        setMessages((prevMessages) => [...prevMessages, aiMessage]);
-      }
+      setMessages((prevMessages) => [...prevMessages, aiMessage]);
     } catch (err: unknown) {
-      let errorMessage = "Failed to send message";
-
-      if (err && typeof err === "object") {
-        if (
-          "response" in err &&
-          err.response &&
-          typeof err.response === "object"
-        ) {
-          if (
-            "data" in err.response &&
-            err.response.data &&
-            typeof err.response.data === "object"
-          ) {
-            if ("detail" in err.response.data) {
-              errorMessage = String(err.response.data.detail);
-            }
-          }
-        } else if ("message" in err) {
-          errorMessage = String(err.message);
-        }
-      }
-
+      const errorMessage = getErrorMessage(err);
       setError(errorMessage);
-      console.error("❌ [ChatView] Send message error:", errorMessage);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const getErrorMessage = (err: unknown) => {
+    let errorMessage = "Failed to send message";
+
+    if (err && typeof err === "object") {
+      if (
+        "response" in err &&
+        err.response &&
+        typeof err.response === "object"
+      ) {
+        if (
+          "data" in err.response &&
+          err.response.data &&
+          typeof err.response.data === "object"
+        ) {
+          if ("detail" in err.response.data) {
+            errorMessage = String(err.response.data.detail);
+          }
+        }
+      } else if ("message" in err) {
+        errorMessage = String(err.message);
+      }
+    }
+
+    return errorMessage;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -265,7 +181,6 @@ const ChatView: React.FC = () => {
     }
   };
 
-  // ✅ Get display info for file context
   const getFileInfo = () => {
     if (!fileContext) return null;
 
@@ -287,65 +202,55 @@ const ChatView: React.FC = () => {
     };
   };
 
-  const fileInfo = getFileInfo();
-
-  // ✅ NEW: Handle approval actions
-  const handleApprove = async () => {
-    if (!pendingApproval) return;
-
-    console.log("✅ [ChatView] User approved:", pendingApproval.type);
-
-    if (pendingApproval.type === "edit") {
-      // Apply the edit to the file
-      const { new_content, file_path } = pendingApproval.data;
-
-      try {
-        console.log("📝 [ChatView] Applying edit to file:", file_path);
-
-        // ✅ NEW: Send write command to extension
-        vscodeAPI.postMessage({
-          command: "writeFile",
-          filePath: file_path,
-          content: new_content,
-        });
-
-        // Clear pending approval
-        setPendingApproval(null);
-      } catch (error) {
-        console.error("❌ [ChatView] Failed to apply edit:", error);
-        setError("Failed to apply changes to file");
-      }
-    } else if (pendingApproval.type === "create") {
-      // Create the new file
-      const { new_content, file_path } = pendingApproval.data;
-
-      try {
-        console.log("📝 [ChatView] Creating file:", file_path);
-
-        // ✅ NEW: Send create command to extension
-        vscodeAPI.postMessage({
-          command: "createFile",
-          filePath: file_path,
-          content: new_content,
-        });
-
-        // Clear pending approval
-        setPendingApproval(null);
-      } catch (error) {
-        console.error("❌ [ChatView] Failed to create file:", error);
-        setError("Failed to create file");
-      }
+  const applyFileEdit = async (filePath: string, content: string) => {
+    try {
+      vscodeAPI.postMessage({
+        command: "writeFile",
+        filePath: filePath,
+        content: content,
+      });
+    } catch (error) {
+      console.error("Failed to apply edit:", error);
+      setError("Failed to apply changes to file");
     }
   };
 
-  const handleReject = () => {
-    console.log("❌ [ChatView] User rejected changes");
-    setPendingApproval(null);
+  const createFile = async (filePath: string, content: string) => {
+    try {
+      vscodeAPI.postMessage({
+        command: "createFile",
+        filePath: filePath,
+        content: content,
+      });
+    } catch (error) {
+      console.error("Failed to create file:", error);
+      setError("Failed to create file");
+    }
   };
 
-  // ✅ NEW: Render diff view
-  const renderDiff = (original: string, modified: string) => {
+  const renderDiff = (original: string, modified: string, filePath: string) => {
     const diff = diffLines(original, modified);
+
+    // Определяем язык из расширения файла
+    const getLanguage = (path: string): string => {
+      const ext = path.split(".").pop()?.toLowerCase();
+      const langMap: { [key: string]: string } = {
+        ts: "typescript",
+        tsx: "tsx",
+        js: "javascript",
+        jsx: "jsx",
+        py: "python",
+        json: "json",
+        css: "css",
+        html: "html",
+        md: "markdown",
+        yml: "yaml",
+        yaml: "yaml",
+      };
+      return langMap[ext || ""] || "typescript";
+    };
+
+    const language = getLanguage(filePath);
 
     return (
       <div className="diff-view">
@@ -358,14 +263,50 @@ const ChatView: React.FC = () => {
 
           return (
             <div key={index} className={className}>
-              {part.value.split("\n").map((line, lineIndex) => (
-                <div key={lineIndex} className="diff-line">
-                  <span className="diff-marker">
-                    {part.added ? "+" : part.removed ? "-" : " "}
-                  </span>
-                  <span className="diff-content">{line}</span>
-                </div>
-              ))}
+              <SyntaxHighlighter
+                language={language}
+                style={vscDarkPlus}
+                PreTag="div"
+                customStyle={{
+                  margin: 0,
+                  padding: 0,
+                  background: "transparent",
+                  fontSize: "13px",
+                  lineHeight: "1.5",
+                }}
+                codeTagProps={{
+                  style: {
+                    fontFamily:
+                      '"Consolas", "Monaco", "Courier New", monospace',
+                  },
+                }}
+                showLineNumbers={true}
+                lineNumberStyle={{
+                  minWidth: "30px",
+                  paddingRight: "10px",
+                  textAlign: "center",
+                  userSelect: "none",
+                  color: part.added
+                    ? "#4ec9b0"
+                    : part.removed
+                    ? "#f48771"
+                    : "#858585",
+                  backgroundColor: part.added
+                    ? "rgba(46, 160, 67, 0.3)"
+                    : part.removed
+                    ? "rgba(244, 71, 71, 0.25)"
+                    : "transparent",
+                }}
+                wrapLines={true}
+                lineProps={(lineNumber) => ({
+                  style: {
+                    display: "block",
+                    width: "100%",
+                  },
+                })}
+              >
+                {part.value}
+              </SyntaxHighlighter>
             </div>
           );
         })}
@@ -374,14 +315,12 @@ const ChatView: React.FC = () => {
   };
 
   const handleViewDiff = (message: ExtendedMessage) => {
-    console.log("📊 [ChatView] Opening diff view in VS Code");
-
     if (
       !message.original_content ||
       !message.new_content ||
       !message.file_path
     ) {
-      console.error("❌ Missing diff data");
+      console.error("Missing diff data");
       return;
     }
 
@@ -393,9 +332,11 @@ const ChatView: React.FC = () => {
     });
   };
 
+  const fileInfo = getFileInfo();
+
   return (
     <div className="chat-view">
-      {/* ✅ Chat Header with Clear Button */}
+      {/* Header */}
       <div className="chat-header">
         <span className="chat-title">Chat</span>
         {messages.length > 0 && (
@@ -409,6 +350,7 @@ const ChatView: React.FC = () => {
         )}
       </div>
 
+      {/* Messages */}
       <div className="chat-messages">
         {messages.length === 0 && !isLoading && (
           <div className="empty-state">
@@ -452,7 +394,7 @@ const ChatView: React.FC = () => {
                     {message.content}
                   </ReactMarkdown>
 
-                  {/* ✅ NEW: Show diff for edit responses */}
+                  {/* Diff View */}
                   {message.response_type === "edit" &&
                     message.original_content &&
                     message.new_content && (
@@ -465,34 +407,33 @@ const ChatView: React.FC = () => {
                         </div>
                         {renderDiff(
                           message.original_content,
-                          message.new_content
+                          message.new_content,
+                          message.file_path || "file.ts" // Передаём путь к файлу
                         )}
-                        {pendingApproval?.messageId === message.id && (
-                          <div className="diff-actions">
-                            <button
-                              className="view-diff-button"
-                              onClick={() => handleViewDiff(message)}
-                            >
-                              👁️ View Diff in Editor
-                            </button>
-                            <button
-                              className="approve-button"
-                              onClick={handleApprove}
-                            >
-                              ✅ Apply Changes
-                            </button>
-                            <button
-                              className="reject-button"
-                              onClick={handleReject}
-                            >
-                              ❌ Reject
-                            </button>
-                          </div>
-                        )}
+
+                        <div className="diff-actions">
+                          <button
+                            className="view-diff-button"
+                            onClick={() => handleViewDiff(message)}
+                          >
+                            👁️ View Diff in Editor
+                          </button>
+                          <button
+                            className="approve-button"
+                            onClick={() =>
+                              applyFileEdit(
+                                message.file_path!,
+                                message.new_content!
+                              )
+                            }
+                          >
+                            ✅ Apply Changes
+                          </button>
+                        </div>
                       </div>
                     )}
 
-                  {/* ✅ NEW: Show file preview for create responses */}
+                  {/* File Preview */}
                   {message.response_type === "create" &&
                     message.new_content && (
                       <div className="file-preview-container">
@@ -512,26 +453,24 @@ const ChatView: React.FC = () => {
                         >
                           {message.new_content}
                         </SyntaxHighlighter>
-                        {pendingApproval?.messageId === message.id && (
-                          <div className="file-preview-actions">
-                            <button
-                              className="approve-button"
-                              onClick={handleApprove}
-                            >
-                              ✅ Create File
-                            </button>
-                            <button
-                              className="reject-button"
-                              onClick={handleReject}
-                            >
-                              ❌ Cancel
-                            </button>
-                          </div>
-                        )}
+
+                        <div className="file-preview-actions">
+                          <button
+                            className="approve-button"
+                            onClick={() =>
+                              createFile(
+                                message.file_path!,
+                                message.new_content!
+                              )
+                            }
+                          >
+                            ✅ Create File
+                          </button>
+                        </div>
                       </div>
                     )}
 
-                  {/* ✅ NEW: Show token usage if available */}
+                  {/* Token Usage */}
                   {message.tokens_used && (
                     <div className="token-usage">
                       <span className="token-label">Tokens:</span>
@@ -574,7 +513,7 @@ const ChatView: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* ✅ File Context Indicator */}
+      {/* File Context Indicator */}
       <div className="file-context-bar">
         {fileInfo ? (
           <>

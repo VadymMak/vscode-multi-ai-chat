@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import apiClient from "../api/apiClient";
 import { SidebarProvider } from "../panels/sidebarProvider";
+import { showDiffInEditor, closeDiffEditor } from "../utils/diffEditor";
+
 interface EditFileResponse {
   success: boolean;
   original_content: string;
@@ -93,10 +95,11 @@ export async function editFile(projectId: number | null): Promise<void> {
     );
 
     // 5. Show diff preview in editor
-    await showDiffPreview(
+    console.log("🟡 [editFile] Showing diff preview...");
+    await showDiffInEditor(
+      filePath,
       response.original_content,
-      response.new_content,
-      filePath
+      response.new_content
     );
 
     // 6. Request approval through MainPanel
@@ -151,21 +154,6 @@ export async function editFile(projectId: number | null): Promise<void> {
     if (approvalResponse.action === "apply") {
       console.log("🟢 [editFile] Applying changes...");
 
-      // SMART CLEANUP: Only close the diff view tabs, not all editors
-      // Get all visible editors
-      const allEditors = vscode.window.visibleTextEditors;
-
-      // Close only the temp diff files (.original and .modified)
-      for (const ed of allEditors) {
-        const uri = ed.document.uri.toString();
-        if (uri.includes(".original") || uri.includes(".modified")) {
-          await vscode.window.showTextDocument(ed.document);
-          await vscode.commands.executeCommand(
-            "workbench.action.closeActiveEditor"
-          );
-        }
-      }
-
       // Find the original file editor (should still be open in background)
       const originalFilePath = editor.document.uri.fsPath;
       let targetEditor = vscode.window.visibleTextEditors.find(
@@ -198,17 +186,7 @@ export async function editFile(projectId: number | null): Promise<void> {
     } else if (approvalResponse.action === "edit") {
       console.log("🔄 [editFile] User wants to edit instruction");
 
-      // Close only diff temp files
-      const allEditors = vscode.window.visibleTextEditors;
-      for (const ed of allEditors) {
-        const uri = ed.document.uri.toString();
-        if (uri.includes(".original") || uri.includes(".modified")) {
-          await vscode.window.showTextDocument(ed.document);
-          await vscode.commands.executeCommand(
-            "workbench.action.closeActiveEditor"
-          );
-        }
-      }
+      await closeDiffEditor(filePath); // Close diff editor
 
       // Show original file
       const originalFilePath = editor.document.uri.fsPath;
@@ -223,17 +201,7 @@ export async function editFile(projectId: number | null): Promise<void> {
     } else {
       console.log("🟡 [editFile] Changes rejected");
 
-      // Close only diff temp files
-      const allEditors = vscode.window.visibleTextEditors;
-      for (const ed of allEditors) {
-        const uri = ed.document.uri.toString();
-        if (uri.includes(".original") || uri.includes(".modified")) {
-          await vscode.window.showTextDocument(ed.document);
-          await vscode.commands.executeCommand(
-            "workbench.action.closeActiveEditor"
-          );
-        }
-      }
+      await closeDiffEditor(filePath); // Close diff editor
 
       // Show original file
       const originalFilePath = editor.document.uri.fsPath;
@@ -244,9 +212,6 @@ export async function editFile(projectId: number | null): Promise<void> {
 
       vscode.window.showInformationMessage("❌ Changes rejected.");
     }
-
-    // 8. Close diff view
-    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   } catch (error) {
     console.error("❌ [editFile] Error:", error);
 
@@ -266,42 +231,6 @@ export async function editFile(projectId: number | null): Promise<void> {
       );
     }
   }
-}
-
-async function showDiffPreview(
-  originalContent: string,
-  modifiedContent: string,
-  filename: string
-): Promise<void> {
-  // Create temporary URIs for diff view
-  const originalUri = vscode.Uri.parse(`untitled:${filename}.original`).with({
-    scheme: "untitled",
-  });
-
-  const modifiedUri = vscode.Uri.parse(`untitled:${filename}.modified`).with({
-    scheme: "untitled",
-  });
-
-  // Create documents
-  const originalDoc = await vscode.workspace.openTextDocument(originalUri);
-  const modifiedDoc = await vscode.workspace.openTextDocument(modifiedUri);
-
-  // Write content to documents
-  const editOriginal = new vscode.WorkspaceEdit();
-  editOriginal.insert(originalUri, new vscode.Position(0, 0), originalContent);
-  await vscode.workspace.applyEdit(editOriginal);
-
-  const editModified = new vscode.WorkspaceEdit();
-  editModified.insert(modifiedUri, new vscode.Position(0, 0), modifiedContent);
-  await vscode.workspace.applyEdit(editModified);
-
-  // Show diff
-  await vscode.commands.executeCommand(
-    "vscode.diff",
-    originalDoc.uri,
-    modifiedDoc.uri,
-    `AI Changes: ${filename}`
-  );
 }
 
 async function applyChanges(

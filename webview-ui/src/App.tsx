@@ -14,16 +14,13 @@ const App: React.FC = () => {
   const isAuthenticated = authStatus === "authenticated";
   const isChecking = authStatus === "checking";
 
-  // ✅ NEW: Approval dialog state
   const [approvalRequest, setApprovalRequest] =
     React.useState<ApprovalRequest | null>(null);
 
-  // ✅ FIXED: Use vscodeAPI wrapper
   const handleApprovalResponse = React.useCallback(
     (response: ApprovalResponse) => {
       console.log("🟢 [App] Approval response:", response);
 
-      // ✅ FIXED: Use the proper API wrapper
       vscodeAPI.postMessage({
         type: "approvalResponse",
         response: response,
@@ -31,7 +28,6 @@ const App: React.FC = () => {
 
       console.log("✅ [App] Message posted via vscodeAPI");
 
-      // Clear approval dialog
       setApprovalRequest(null);
     },
     []
@@ -39,14 +35,29 @@ const App: React.FC = () => {
 
   React.useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      const message = event.data;
+      try {
+        const message = event.data;
 
-      console.log("🟡 [App] Received message:", message.type);
+        console.log("📨 [App] Received message:", message);
 
-      // Handle approval requests
-      if (message.type === "requestApproval") {
-        console.log("🟢 [App] Approval requested:", message.approval);
-        setApprovalRequest(message.approval);
+        if (message && message.command === "apiResponse") {
+          const response = message.response;
+
+          if (response && response.response_type === "requestApproval") {
+            console.log("🟢 [App] Approval requested:", response);
+            setApprovalRequest(response);
+          } else {
+            console.log(
+              "⚠️ [App] Received response with undefined or unsupported response_type"
+            );
+          }
+        } else {
+          console.log(
+            "⚠️ [App] Received message with undefined or unsupported command"
+          );
+        }
+      } catch (error) {
+        console.error("❌ [App] Error handling message:", error);
       }
     };
 
@@ -77,9 +88,7 @@ const App: React.FC = () => {
             <p>Checking authentication...</p>
           </div>
         ) : isAuthenticated ? (
-          <>
-            <ChatView />
-          </>
+          <ChatView />
         ) : (
           <LoginForm
             onSuccess={() => {
@@ -96,7 +105,6 @@ const App: React.FC = () => {
         <p>Powered by AI</p>
       </footer>
 
-      {/* ✅ NEW: Approval Dialog - renders on top of everything */}
       <ApprovalDialog
         request={approvalRequest}
         onResponse={handleApprovalResponse}
