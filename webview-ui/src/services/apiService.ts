@@ -7,19 +7,28 @@ import { vscodeAPI } from "../utils/vscodeApi";
 let requestCounter = 0;
 const pendingRequests: Record<string, any> = {};
 
-// Listen for API responses from extension
+/// Listen for API responses from extension
 (globalThis as any).addEventListener("message", (event: any) => {
   const message = event.data;
 
   if (message.command === "apiResponse" && message.requestId) {
     const pending = pendingRequests[message.requestId];
     if (pending) {
-      if (message.response.success) {
-        pending.resolve(message.response.data);
+      // ✅ FIX: Backend returns data directly in response, not wrapped in success/data
+      if (message.response) {
+        // Check for errors (can be in 'error' or 'detail' field)
+        if (message.response.error || message.response.detail) {
+          const errorMsg = message.response.error || message.response.detail;
+          console.error(`❌ [ApiClient] Request failed:`, errorMsg);
+          pending.reject(new Error(errorMsg));
+        } else {
+          // ✅ Return entire response object (includes response_type, diff, etc.)
+          console.log(`✅ [ApiClient] Request succeeded:`, message.response);
+          pending.resolve(message.response);
+        }
       } else {
-        pending.reject(
-          new Error(message.response.error || "API request failed")
-        );
+        console.error(`❌ [ApiClient] Empty response`);
+        pending.reject(new Error("Empty response from API"));
       }
       delete pendingRequests[message.requestId];
     }
@@ -77,14 +86,20 @@ export const apiService = {
     });
 
     console.log("🔧 apiService.login response received");
+    console.log("🔍 [DEBUG] Full response:", response);
+    console.log("🔍 [DEBUG] response.user:", response.user);
+    console.log("🔍 [DEBUG] response.access_token:", response.access_token);
+    console.log("🔍 [DEBUG] response.data:", response.data);
 
-    // ✅ Just update UI state (not token storage!)
+    // ✅ FIX: Extract from response.data!
+    const userData = response.data || response;
+
     useAuthStore.getState().setAuthenticated(true);
-    useAuthStore.getState().setUser(response.user);
+    useAuthStore.getState().setUser(userData.user);
 
     return {
-      user: response.user,
-      token: response.access_token, // For compatibility, but not stored here
+      user: userData.user,
+      token: userData.access_token,
     };
   },
 
@@ -132,9 +147,13 @@ export const apiService = {
       const response = await apiRequest("GET", "/projects");
       console.log("📂 [apiService] Projects received:", response);
 
-      const projects = Array.isArray(response)
-        ? response
-        : response.projects || [];
+      // ✅ FIX: Extract from response.data (same pattern as login)
+      const projectsData = response.data || response;
+      const projects = Array.isArray(projectsData)
+        ? projectsData
+        : projectsData.projects || [];
+
+      console.log("📂 [apiService] Extracted projects:", projects.length);
 
       useProjectStore.getState().setProjects(projects);
 
@@ -163,7 +182,12 @@ export const apiService = {
         `/projects/${projectId}/index-status`
       );
       console.log("📊 [apiService] Index status received:", response);
-      return response;
+
+      // ✅ FIX: Extract from response.data (same pattern!)
+      const statusData = response.data || response;
+      console.log("📊 [apiService] Extracted status:", statusData);
+
+      return statusData;
     } catch (error) {
       console.error("❌ [apiService] Get index status error:", error);
       throw error;
@@ -201,7 +225,8 @@ export const sendMessage = async (
     lineCount?: number;
     fileContent?: string;
     selectedText?: string;
-  }
+  },
+  mode?: "chat" | "edit" | "create"
 ): Promise<{
   message: string;
   response_type?: "chat" | "edit" | "create";
@@ -217,6 +242,9 @@ export const sendMessage = async (
     const projectId = useProjectStore.getState().selectedProjectId;
     console.log("📂 [apiService] Project ID:", projectId);
 
+    const roleId = 1; // или из store если есть
+    const chatSessionId = null; // или из store если есть
+
     if (fileContext) {
       console.log("📎 [apiService] File context:", {
         filePath: fileContext.filePath,
@@ -225,24 +253,34 @@ export const sendMessage = async (
       });
     }
 
+    // ✅ ДОБАВИТЬ лог mode
+    console.log("🎯 [apiService] Mode:", mode || "chat");
+
     const response = await apiRequest("POST", "/vscode/chat", {
       message: message,
       project_id: projectId,
       filePath: fileContext?.filePath || null,
+      role_id: roleId,
+      chat_session_id: chatSessionId,
       fileContent: fileContext?.fileContent || null,
       selectedText: fileContext?.selectedText || null,
+      mode: mode || "chat",
     });
 
     console.log("✅ [apiService] Response received:", response);
 
+    // ✅ FIX: Extract from response.data (same pattern!)
+    const responseData = response.data || response;
+    console.log("✅ [apiService] Extracted response:", responseData);
+
     const formattedResponse = {
-      message: response.message || "No response from AI",
-      response_type: response.response_type || "chat",
-      original_content: response.original_content,
-      new_content: response.new_content,
-      diff: response.diff,
-      file_path: response.file_path,
-      tokens_used: response.tokens_used,
+      message: responseData.message || "No response from AI",
+      response_type: responseData.response_type || "chat",
+      original_content: responseData.original_content,
+      new_content: responseData.new_content,
+      diff: responseData.diff,
+      file_path: responseData.file_path,
+      tokens_used: responseData.tokens_used,
     };
 
     console.log("📤 [apiService] Formatted response:", formattedResponse);

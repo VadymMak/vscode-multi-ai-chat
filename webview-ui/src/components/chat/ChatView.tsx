@@ -62,7 +62,9 @@ const ChatView: React.FC = () => {
     };
 
     window.addEventListener("message", messageHandler);
-    requestFileContext();
+    // ✅ НЕ запрашивать fileContext при монтировании
+    // FileContext обновляется автоматически при смене файла
+    // через onDidChangeActiveTextEditor в extension
 
     return () => {
       window.removeEventListener("message", messageHandler);
@@ -87,8 +89,60 @@ const ChatView: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const requestFileContext = () => {
-    vscodeAPI.postMessage({ command: "getFileContext" });
+  const requestFileContext = (mode: "chat" | "edit" | "create" = "edit") => {
+    // ✅ Default mode = 'edit' чтобы не обрезать большие файлы
+    vscodeAPI.postMessage({
+      command: "getFileContext",
+      mode: mode,
+    });
+  };
+
+  const detectMode = (message: string): "chat" | "edit" | "create" => {
+    const lowerMessage = message.toLowerCase();
+
+    // EDIT mode keywords
+    const editKeywords = [
+      "add",
+      "fix",
+      "change",
+      "modify",
+      "update",
+      "refactor",
+      "remove",
+      "delete",
+      "replace",
+      "edit",
+      "correct",
+      "improve",
+      "optimize",
+      "rewrite",
+    ];
+
+    // CREATE mode keywords
+    const createKeywords = [
+      "create",
+      "generate",
+      "make",
+      "build",
+      "write new",
+      "add new",
+      "new file",
+      "new class",
+      "new function",
+    ];
+
+    // Check for CREATE
+    if (createKeywords.some((keyword) => lowerMessage.includes(keyword))) {
+      return "create";
+    }
+
+    // Check for EDIT
+    if (editKeywords.some((keyword) => lowerMessage.includes(keyword))) {
+      return "edit";
+    }
+
+    // Default to CHAT
+    return "chat";
   };
 
   const refreshFileContext = () => {
@@ -112,6 +166,18 @@ const ChatView: React.FC = () => {
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
 
+    // ✅ Detect mode from user message
+    const mode = detectMode(inputValue);
+    console.log("🎯 [ChatView] Detected mode:", mode);
+
+    // ✅ Use EXISTING fileContext from state (updated automatically by extension)
+    console.log("📄 [ChatView] Using file context from state:", {
+      filePath: fileContext?.filePath,
+      contentLength: fileContext?.fileContent?.length,
+      includeFile,
+      mode,
+    });
+
     const userMessage: ExtendedMessage = {
       id: Date.now().toString(),
       content: inputValue,
@@ -128,7 +194,18 @@ const ChatView: React.FC = () => {
     try {
       const contextToSend =
         includeFile && fileContext ? fileContext : undefined;
-      const response = await sendMessage(userMessage.content, contextToSend);
+
+      console.log("📤 [ChatView] Sending message with context:", {
+        hasContext: !!contextToSend,
+        filePath: contextToSend?.filePath,
+        contentLength: contextToSend?.fileContent?.length,
+      });
+
+      const response = await sendMessage(
+        userMessage.content,
+        contextToSend,
+        mode
+      );
 
       const aiMessage: ExtendedMessage = {
         id: (Date.now() + 1).toString(),

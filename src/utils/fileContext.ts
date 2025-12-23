@@ -1,6 +1,15 @@
 import * as vscode from "vscode";
 import logger from "./logger";
 
+// ✅ File transfer modes
+export type FileTransferMode = "chat" | "edit" | "create";
+
+// ✅ Options for file context retrieval
+export interface FileContextOptions {
+  mode?: FileTransferMode;
+  maxLength?: number;
+}
+
 export interface FileContext {
   filePath?: string;
   fileName?: string;
@@ -43,8 +52,9 @@ export function initFileContextTracking(
 /**
  * Get context from active or last active editor
  */
-export function getFileContext(): FileContext {
+export function getFileContext(options?: FileContextOptions): FileContext {
   const context: FileContext = {};
+  const mode = options?.mode || "chat";
 
   // Try current active editor first, then fall back to last tracked
   const editor = vscode.window.activeTextEditor || lastActiveEditor;
@@ -56,20 +66,16 @@ export function getFileContext(): FileContext {
 
   try {
     const document = editor.document;
+    const fullContent = document.getText();
+    const originalLength = fullContent.length;
 
-    // File path (full)
+    // File metadata
     context.filePath = document.fileName;
-
-    // File name (just the name)
     context.fileName = document.fileName.split(/[/\\]/).pop();
-
-    // Language ID (typescript, python, etc)
     context.language = document.languageId;
-
-    // Line count
     context.lineCount = document.lineCount;
 
-    // Selected text (priority over full content)
+    // Selected text (highest priority - always full)
     const selection = editor.selection;
     if (!selection.isEmpty) {
       context.selectedText = document.getText(selection);
@@ -78,19 +84,36 @@ export function getFileContext(): FileContext {
       );
     }
 
-    // File content (limit to 10000 chars to avoid huge payloads)
-    const fullContent = document.getText();
-    context.fileContent = fullContent.substring(0, 10000);
+    // ✅ SMART LIMITS based on mode
+    let maxContentLength: number;
 
-    if (fullContent.length > 10000) {
-      logger.info(
-        `📄 [FileContext] File truncated: ${fullContent.length} → 10000 chars`
-      );
+    if (options?.maxLength) {
+      // Custom limit provided
+      maxContentLength = options.maxLength;
+    } else if (mode === "edit" || mode === "create") {
+      // EDIT/CREATE: Send full file up to 500KB
+      maxContentLength = 500_000;
+    } else {
+      // CHAT: Smart limits based on file size
+      if (originalLength <= 20_000) {
+        maxContentLength = originalLength; // Small files: send full
+      } else {
+        maxContentLength = 10_000; // Large files: truncate
+      }
     }
 
-    logger.info(
-      `✅ [FileContext] Got context: ${context.fileName} (${context.language})`
-    );
+    // Apply content limit
+    if (originalLength <= maxContentLength) {
+      context.fileContent = fullContent;
+      logger.info(
+        `✅ [FileContext] Full file: ${context.fileName} (${originalLength} chars, mode: ${mode})`
+      );
+    } else {
+      context.fileContent = fullContent.substring(0, maxContentLength);
+      logger.info(
+        `📄 [FileContext] File truncated: ${originalLength} → ${maxContentLength} chars (mode: ${mode})`
+      );
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`❌ [FileContext] Error: ${errorMessage}`);

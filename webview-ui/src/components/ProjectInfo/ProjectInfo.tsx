@@ -12,7 +12,13 @@ interface IndexStatus {
 }
 
 const ProjectInfo: React.FC = () => {
-  const { projects, selectedProjectId } = useProjectStore();
+  const projects = useProjectStore((state) => state.projects);
+  const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
+  console.log("🔍 [ProjectInfo] Render:", {
+    projects: projects.length,
+    selectedProjectId,
+    selectedProject: projects.find((p) => p.id === selectedProjectId),
+  });
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
 

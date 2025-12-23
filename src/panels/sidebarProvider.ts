@@ -33,6 +33,54 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this._extensionUri = extensionUri;
     this._context = context;
     this._authManager = AuthManager.getInstance();
+
+    // ✅ ДОБАВИТЬ: Auto-detect открытого файла
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      console.log("📄 [SidebarProvider] Active editor changed");
+      this.sendCurrentFileToWebview();
+    });
+
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document === vscode.window.activeTextEditor?.document) {
+        console.log("📝 [SidebarProvider] Document changed");
+        this.sendCurrentFileToWebview();
+      }
+    });
+  }
+
+  // ✅ НОВЫЙ МЕТОД: Отправить текущий файл в webview
+  private sendCurrentFileToWebview() {
+    if (!this._view) return;
+
+    const activeEditor = vscode.window.activeTextEditor;
+
+    if (activeEditor) {
+      const document = activeEditor.document;
+      const filePath = vscode.workspace.asRelativePath(document.uri);
+      const fileContent = document.getText();
+
+      console.log("📤 [SidebarProvider] Sending current file to webview:", {
+        path: filePath,
+        lines: document.lineCount,
+        chars: fileContent.length,
+      });
+
+      this._view.webview.postMessage({
+        type: "currentFile",
+        filePath,
+        fileContent,
+        lineCount: document.lineCount,
+      });
+    } else {
+      console.log("⚠️ [SidebarProvider] No active editor");
+
+      this._view.webview.postMessage({
+        type: "currentFile",
+        filePath: undefined,
+        fileContent: undefined,
+        lineCount: 0,
+      });
+    }
   }
 
   private async _showProjectSelectionNotification(webview: vscode.Webview) {
@@ -254,10 +302,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             this._currentProjectId = null;
             break;
 
-          case "getFileContext":
+          case "getFileContext": {
             console.log("📄 [SidebarProvider] Sending file context");
+
+            // ✅ Extract mode from message (if provided)
+            const mode = message.mode || "chat";
+            console.log("📄 [SidebarProvider] Mode:", mode);
+
             try {
-              const context = getFileContext();
+              const context = getFileContext({ mode });
               webviewView.webview.postMessage({
                 command: "fileContext",
                 data: context,
@@ -269,6 +322,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               });
             }
             break;
+          }
 
           case "approvalResponse":
             console.log("🟢 [SidebarProvider] Approval response received");
@@ -277,6 +331,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           case "sendMessage":
             logger.info(`Message from webview: ${message.text}`);
+            break;
+
+          case "refreshCurrentFile":
+            console.log("🔄 [SidebarProvider] Refresh current file");
+            this.sendCurrentFileToWebview();
             break;
 
           case "indexWorkspace":
@@ -449,6 +508,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     setTimeout(() => {
       this._sendStoredToken();
+      // ✅ ДОБАВИТЬ: Отправить текущий файл при загрузке
+      this.sendCurrentFileToWebview();
     }, 500);
   }
 
