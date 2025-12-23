@@ -14,7 +14,14 @@ const pendingRequests: Record<string, any> = {};
   if (message.command === "apiResponse" && message.requestId) {
     const pending = pendingRequests[message.requestId];
     if (pending) {
-      // ✅ FIX: Backend returns data directly in response, not wrapped in success/data
+      console.log(`🔍 [ApiClient] RAW message from extension:`, {
+        requestId: message.requestId,
+        has_response: !!message.response,
+        has_success: message.response?.success,
+        has_data: !!message.response?.data,
+        response_type_level1: message.response?.response_type,
+        response_type_level2: message.response?.data?.response_type,
+      });
       if (message.response) {
         // Check for errors (can be in 'error' or 'detail' field)
         if (message.response.error || message.response.detail) {

@@ -56,15 +56,39 @@ const ChatView: React.FC = () => {
   useEffect(() => {
     const messageHandler = (event: MessageEvent) => {
       const message = event.data;
-      if (message.command === "fileContext") {
-        setFileContext(message.data);
+
+      console.log(
+        "📨 [ChatView] Received message:",
+        message.command || message.type
+      );
+
+      if (message.command === "fileContext" || message.type === "currentFile") {
+        console.log("📄 [ChatView] File context updated:", {
+          filePath: message.data?.filePath || message.filePath,
+          contentLength:
+            message.data?.fileContent?.length || message.fileContent?.length,
+          lineCount: message.data?.lineCount || message.lineCount,
+        });
+
+        // ✅ Handle both message formats
+        const context = message.data || {
+          filePath: message.filePath,
+          fileContent: message.fileContent,
+          lineCount: message.lineCount,
+        };
+
+        setFileContext(context);
       }
     };
 
     window.addEventListener("message", messageHandler);
-    // ✅ НЕ запрашивать fileContext при монтировании
-    // FileContext обновляется автоматически при смене файла
-    // через onDidChangeActiveTextEditor в extension
+
+    // ✅ Request initial file context when component mounts
+    console.log("🔄 [ChatView] Requesting initial file context");
+    vscodeAPI.postMessage({
+      command: "getFileContext",
+      mode: "edit",
+    });
 
     return () => {
       window.removeEventListener("message", messageHandler);
@@ -101,6 +125,7 @@ const ChatView: React.FC = () => {
     const lowerMessage = message.toLowerCase();
 
     // EDIT mode keywords
+
     const editKeywords = [
       "add",
       "fix",
@@ -116,6 +141,11 @@ const ChatView: React.FC = () => {
       "improve",
       "optimize",
       "rewrite",
+      "wrap",
+      "line",
+      "comment",
+      "rename",
+      "move",
     ];
 
     // CREATE mode keywords

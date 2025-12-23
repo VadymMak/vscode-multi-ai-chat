@@ -632,6 +632,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const response = await axios(config);
       console.log(`✅ [SidebarProvider] Response: ${response.status}`);
 
+      console.log(`🔍 [SidebarProvider] RAW backend response:`, {
+        endpoint: endpoint,
+        status: response.status,
+        response_type: response.data?.response_type,
+        has_original: !!response.data?.original_content,
+        has_new: !!response.data?.new_content,
+        has_diff: !!response.data?.diff,
+        has_message: !!response.data?.message,
+      });
+
       if (endpoint === "/auth/login" && response.data.access_token) {
         const newToken = response.data.access_token;
         console.log(`🔐 [SidebarProvider] Login successful!`);

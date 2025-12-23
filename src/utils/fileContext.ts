@@ -95,10 +95,10 @@ export function getFileContext(options?: FileContextOptions): FileContext {
       maxContentLength = 500_000;
     } else {
       // CHAT: Smart limits based on file size
-      if (originalLength <= 20_000) {
+      if (originalLength <= 50_000) {
         maxContentLength = originalLength; // Small files: send full
       } else {
-        maxContentLength = 10_000; // Large files: truncate
+        maxContentLength = 50_000; // Large files: truncate
       }
     }
 
