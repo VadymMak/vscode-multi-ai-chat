@@ -34,9 +34,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this._context = context;
     this._authManager = AuthManager.getInstance();
 
-    // ✅ ДОБАВИТЬ: Auto-detect открытого файла
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       console.log("📄 [SidebarProvider] Active editor changed");
+
+      // ✅ Ignore temp diff files
+      if (editor && editor.document.uri.fsPath.includes(".vscode-temp")) {
+        console.log("⚠️ [SidebarProvider] Ignoring temp file");
+        return;
+      }
+
       this.sendCurrentFileToWebview();
     });
 

@@ -42,19 +42,33 @@ const App: React.FC = () => {
 
         if (message && message.command === "apiResponse") {
           const response = message.response;
+          const responseType = response?.response_type;
 
-          if (response && response.response_type === "requestApproval") {
+          // ✅ Handle approval requests
+          if (responseType === "requestApproval") {
             console.log("🟢 [App] Approval requested:", response);
             setApprovalRequest(response);
-          } else {
+          }
+          // ✅ Handle edit/create/chat - already handled by ChatView
+          else if (
+            responseType === "edit" ||
+            responseType === "create" ||
+            responseType === "chat"
+          ) {
             console.log(
-              "⚠️ [App] Received response with undefined or unsupported response_type"
+              `✅ [App] ${responseType} response - handled by ChatView`
             );
           }
+          // ⚠️ Unknown response type
+          else {
+            console.log("⚠️ [App] Unknown response_type:", responseType);
+          }
+        }
+        // ✅ Ignore other messages (fileContext, currentFile, etc.)
+        else if (message?.command || message?.type) {
+          // Silent - these are handled elsewhere
         } else {
-          console.log(
-            "⚠️ [App] Received message with undefined or unsupported command"
-          );
+          console.log("⚠️ [App] Unknown message format:", message);
         }
       } catch (error) {
         console.error("❌ [App] Error handling message:", error);

@@ -18,7 +18,21 @@ interface FileContext {
   lineCount?: number;
 }
 
+// ✅ API Response wrapper interface
+interface ApiResponse {
+  success?: boolean;
+  data?: ExtendedMessage;
+  message?: string;
+  response_type?: "chat" | "edit" | "create";
+  original_content?: string;
+  new_content?: string;
+  diff?: string;
+  file_path?: string;
+  tokens_used?: any;
+}
+
 interface ExtendedMessage extends Message {
+  message?: string;
   response_type?: "chat" | "edit" | "create";
   original_content?: string;
   new_content?: string;
@@ -231,19 +245,34 @@ const ChatView: React.FC = () => {
         contentLength: contextToSend?.fileContent?.length,
       });
 
-      const response = await sendMessage(
+      const response = (await sendMessage(
         userMessage.content,
         contextToSend,
         mode
-      );
+      )) as ApiResponse;
+
+      // ✅ FIX: Unwrap nested data object from backend
+      const actualResponse = (response.data || response) as ExtendedMessage;
+
+      console.log("🔍 [ChatView] Response structure:", {
+        hasData: !!response.data,
+        response_type: actualResponse.response_type,
+        has_original: !!actualResponse.original_content,
+        has_new: !!actualResponse.new_content,
+        has_diff: !!actualResponse.diff,
+      });
 
       const aiMessage: ExtendedMessage = {
         id: (Date.now() + 1).toString(),
-        content: response.message,
+        content: actualResponse.message || "",
         sender: "ai",
         timestamp: new Date().toISOString(),
-        response_type: response.response_type,
-        ...response,
+        response_type: actualResponse.response_type,
+        original_content: actualResponse.original_content,
+        new_content: actualResponse.new_content,
+        diff: actualResponse.diff,
+        file_path: actualResponse.file_path,
+        tokens_used: actualResponse.tokens_used,
       };
 
       setMessages((prevMessages) => [...prevMessages, aiMessage]);
