@@ -42,7 +42,8 @@ const App: React.FC = () => {
 
         if (message && message.command === "apiResponse") {
           const response = message.response;
-          const responseType = response?.response_type;
+          const responseType =
+            response?.response_type || response?.data?.response_type;
 
           // ✅ Handle approval requests
           if (responseType === "requestApproval") {
