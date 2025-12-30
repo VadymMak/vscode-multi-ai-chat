@@ -24,6 +24,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private readonly _authManager: AuthManager;
   private _currentProjectId: number | null = null;
 
+  // ✅ NEW: Track current selection
+  private _currentSelectedText: string | null = null;
+
   private static approvalCallbacks: Map<
     string,
     (response: any) => void
@@ -34,10 +37,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this._context = context;
     this._authManager = AuthManager.getInstance();
 
+    // ✅ Listen for active editor changes
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       console.log("📄 [SidebarProvider] Active editor changed");
 
-      // ✅ Ignore temp diff files
+      // Ignore temp diff files
       if (editor && editor.document.uri.fsPath.includes(".vscode-temp")) {
         console.log("⚠️ [SidebarProvider] Ignoring temp file");
         return;
@@ -46,15 +50,45 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       this.sendCurrentFileToWebview();
     });
 
+    // ✅ Listen for document changes
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document === vscode.window.activeTextEditor?.document) {
         console.log("📝 [SidebarProvider] Document changed");
         this.sendCurrentFileToWebview();
       }
     });
+
+    // ✅ NEW: Listen for selection changes
+    vscode.window.onDidChangeTextEditorSelection((event) => {
+      const editor = event.textEditor;
+
+      // Ignore temp diff files
+      if (editor.document.uri.fsPath.includes(".vscode-temp")) {
+        return;
+      }
+
+      const selection = editor.selection;
+      const selectedText = editor.document.getText(selection);
+
+      // Only update if selection changed significantly
+      if (selectedText !== this._currentSelectedText) {
+        this._currentSelectedText = selectedText || null;
+
+        if (selectedText && selectedText.length > 0) {
+          console.log(
+            `✂️ [SidebarProvider] Selection changed: ${selectedText.length} chars`
+          );
+        } else {
+          console.log(`✂️ [SidebarProvider] Selection cleared`);
+        }
+
+        // Send updated context to webview
+        this.sendCurrentFileToWebview();
+      }
+    });
   }
 
-  // ✅ НОВЫЙ МЕТОД: Отправить текущий файл в webview
+  // ✅ UPDATED: Send current file AND selection to webview
   private sendCurrentFileToWebview() {
     if (!this._view) return;
 
@@ -65,26 +99,63 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const filePath = vscode.workspace.asRelativePath(document.uri);
       const fileContent = document.getText();
 
-      console.log("📤 [SidebarProvider] Sending current file to webview:", {
+      // ✅ Get current selection
+      const selection = activeEditor.selection;
+      const selectedText = document.getText(selection);
+
+      // ✅ Get file name and language
+      const fileName = path.basename(document.uri.fsPath);
+      const language = document.languageId;
+
+      console.log("📤 [SidebarProvider] Sending file context to webview:", {
         path: filePath,
+        fileName: fileName,
+        language: language,
         lines: document.lineCount,
         chars: fileContent.length,
+        hasSelection: selectedText.length > 0,
+        selectionLength: selectedText.length,
       });
 
       this._view.webview.postMessage({
         type: "currentFile",
+        command: "fileContext", // ✅ Add both for compatibility
         filePath,
+        fileName,
+        language,
         fileContent,
+        selectedText: selectedText.length > 0 ? selectedText : null, // ✅ Include selection
         lineCount: document.lineCount,
+        // ✅ Also send as data object for new format
+        data: {
+          filePath,
+          fileName,
+          language,
+          fileContent,
+          selectedText: selectedText.length > 0 ? selectedText : null,
+          lineCount: document.lineCount,
+        },
       });
     } else {
       console.log("⚠️ [SidebarProvider] No active editor");
 
       this._view.webview.postMessage({
         type: "currentFile",
+        command: "fileContext",
         filePath: undefined,
+        fileName: undefined,
+        language: undefined,
         fileContent: undefined,
+        selectedText: null,
         lineCount: 0,
+        data: {
+          filePath: undefined,
+          fileName: undefined,
+          language: undefined,
+          fileContent: undefined,
+          selectedText: null,
+          lineCount: 0,
+        },
       });
     }
   }
@@ -126,13 +197,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  // File: vscode-extension/src/panels/sidebarProvider.ts
-
   private async _showProjectQuickPick(webview: vscode.Webview) {
     try {
       const axios = require("axios");
 
-      // ✅ FIXED: Get token from secrets directly (same as _handleApiRequest)
       const token = await this._context.secrets.get("authToken");
 
       console.log(
@@ -292,12 +360,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           case "tokenUpdated":
             console.log("🔑 [SidebarProvider] Token update");
             if (message.token) {
-              // Login - save token and show project selection
               await this._context.secrets.store("authToken", message.token);
               console.log("✅ [SidebarProvider] Token saved");
               await this._showProjectSelectionNotification(webviewView.webview);
             } else {
-              // Logout - just clear token (already done in logout case)
               console.log("🚪 [SidebarProvider] Token cleared (logout)");
             }
             break;
@@ -311,16 +377,43 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           case "getFileContext": {
             console.log("📄 [SidebarProvider] Sending file context");
 
-            // ✅ Extract mode from message (if provided)
             const mode = message.mode || "chat";
             console.log("📄 [SidebarProvider] Mode:", mode);
 
             try {
-              const context = getFileContext({ mode });
-              webviewView.webview.postMessage({
-                command: "fileContext",
-                data: context,
-              });
+              // ✅ UPDATED: Get context with selection
+              const activeEditor = vscode.window.activeTextEditor;
+
+              if (activeEditor) {
+                const document = activeEditor.document;
+                const selection = activeEditor.selection;
+                const selectedText = document.getText(selection);
+
+                const context = {
+                  filePath: vscode.workspace.asRelativePath(document.uri),
+                  fileName: path.basename(document.uri.fsPath),
+                  language: document.languageId,
+                  fileContent: document.getText(),
+                  selectedText: selectedText.length > 0 ? selectedText : null,
+                  lineCount: document.lineCount,
+                };
+
+                console.log("📄 [SidebarProvider] File context:", {
+                  filePath: context.filePath,
+                  hasSelection: !!context.selectedText,
+                  selectionLength: context.selectedText?.length || 0,
+                });
+
+                webviewView.webview.postMessage({
+                  command: "fileContext",
+                  data: context,
+                });
+              } else {
+                webviewView.webview.postMessage({
+                  command: "fileContext",
+                  data: {},
+                });
+              }
             } catch (error) {
               webviewView.webview.postMessage({
                 command: "fileContext",
@@ -514,7 +607,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     setTimeout(() => {
       this._sendStoredToken();
-      // ✅ ДОБАВИТЬ: Отправить текущий файл при загрузке
+      // ✅ Send current file on load
       this.sendCurrentFileToWebview();
     }, 500);
   }
@@ -549,7 +642,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       console.log("🔑 [SidebarProvider] Token:", token ? "EXISTS" : "NULL");
 
       if (token) {
-        // ✅ NEW: Check if token is expired
         try {
           const payload = JSON.parse(atob(token.split(".")[1]));
           const now = Math.floor(Date.now() / 1000);
@@ -558,7 +650,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             console.log("❌ [SidebarProvider] Token expired, clearing...");
             await this._context.secrets.delete("authToken");
 
-            // Tell webview token expired
             this._view.webview.postMessage({
               command: "tokenExpired",
             });
@@ -571,7 +662,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           );
         } catch (e) {
           console.log("⚠️ [SidebarProvider] Failed to parse token:", e);
-          // If we can't parse, delete it
           await this._context.secrets.delete("authToken");
           return;
         }
@@ -595,7 +685,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const axios = require("axios");
       console.log(`📤 [SidebarProvider] API ${method} ${endpoint}`);
 
-      // ✅ CRITICAL FIX: Get token from secrets (not AuthManager!)
       const authToken = await this._context.secrets.get("authToken");
       console.log(
         `🔑 [SidebarProvider] Using token from secrets:`,
@@ -659,13 +748,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         await this._context.secrets.store("authToken", newToken);
         console.log(`✅ [SidebarProvider] Token saved to secrets`);
 
-        // ✅ Verify
         const savedToken = await this._context.secrets.get("authToken");
         console.log(
           `✅ [SidebarProvider] Token verification:`,
           savedToken === newToken ? "✅ MATCH" : "❌ MISMATCH"
         );
-        // ✅ NEW: Send fresh token to webview immediately
+
         webview.postMessage({
           command: "token",
           token: newToken,
