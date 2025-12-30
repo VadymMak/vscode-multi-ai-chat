@@ -3,6 +3,9 @@ import { useProjectStore } from "../store/projectStore";
 import { AuthResponse, CheckAuthResponse, Project } from "../types";
 import { vscodeAPI } from "../utils/vscodeApi";
 
+// ✅ NEW: Context mode type
+type ContextMode = "selection" | "file" | "project";
+
 // Simple API Client using Extension as proxy
 let requestCounter = 0;
 const pendingRequests: Record<string, any> = {};
@@ -223,6 +226,7 @@ export const apiService = {
   },
 };
 
+// ✅ UPDATED: Added contextMode parameter
 export const sendMessage = async (
   message: string,
   fileContext?: {
@@ -233,7 +237,8 @@ export const sendMessage = async (
     fileContent?: string;
     selectedText?: string;
   },
-  mode?: "chat" | "edit" | "create"
+  mode?: "chat" | "edit" | "create",
+  contextMode?: ContextMode // ✅ NEW: Context mode parameter
 ): Promise<{
   message: string;
   response_type?: "chat" | "edit" | "create";
@@ -260,10 +265,12 @@ export const sendMessage = async (
       });
     }
 
-    // ✅ ДОБАВИТЬ лог mode
+    // ✅ Log mode and contextMode
     console.log("🎯 [apiService] Mode:", mode || "chat");
+    console.log("🔍 [apiService] Context Mode:", contextMode || "file");
 
-    const response = await apiRequest("POST", "/vscode/chat", {
+    // ✅ Build request payload with contextMode
+    const requestPayload: any = {
       message: message,
       project_id: projectId,
       filePath: fileContext?.filePath || null,
@@ -272,7 +279,16 @@ export const sendMessage = async (
       fileContent: fileContext?.fileContent || null,
       selectedText: fileContext?.selectedText || null,
       mode: mode || "chat",
-    });
+      context_mode: contextMode || "file", // ✅ NEW: Send context mode to backend
+    };
+
+    // ✅ If project mode, signal backend to use Smart Context
+    if (contextMode === "project") {
+      requestPayload.use_smart_context = true;
+      console.log("🧠 [apiService] Smart Context enabled (project mode)");
+    }
+
+    const response = await apiRequest("POST", "/vscode/chat", requestPayload);
 
     console.log("✅ [apiService] Response received:", response);
 

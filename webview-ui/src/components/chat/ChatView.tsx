@@ -8,6 +8,9 @@ import { vscodeAPI } from "../../utils/vscodeApi";
 import "./ChatView.css";
 import { diffLines } from "diff";
 
+// ✅ Context mode type
+type ContextMode = "selection" | "file" | "project";
+
 // ✅ File context interface
 interface FileContext {
   filePath?: string;
@@ -52,16 +55,35 @@ const ChatView: React.FC = () => {
   const [fileContext, setFileContext] = useState<FileContext | null>(null);
   const [includeFile, setIncludeFile] = useState<boolean>(true);
 
+  // ✅ NEW: Context mode state
+  const [contextMode, setContextMode] = useState<ContextMode>("file");
+
   useEffect(() => {
     const savedMessages = loadMessagesFromStorage();
     if (savedMessages) {
       setMessages(savedMessages);
+    }
+
+    // ✅ Load saved context mode
+    const savedMode = (globalThis as any).sessionStorage?.getItem(
+      "multi-ai-chat-context-mode"
+    );
+    if (savedMode && ["selection", "file", "project"].includes(savedMode)) {
+      setContextMode(savedMode as ContextMode);
     }
   }, []);
 
   useEffect(() => {
     saveMessagesToStorage(messages);
   }, [messages]);
+
+  // ✅ Save context mode when it changes
+  useEffect(() => {
+    (globalThis as any).sessionStorage?.setItem(
+      "multi-ai-chat-context-mode",
+      contextMode
+    );
+  }, [contextMode]);
 
   useEffect(() => {
     scrollToBottom();
@@ -139,7 +161,6 @@ const ChatView: React.FC = () => {
     const lowerMessage = message.toLowerCase();
 
     // EDIT mode keywords
-
     const editKeywords = [
       "add",
       "fix",
@@ -207,18 +228,59 @@ const ChatView: React.FC = () => {
     }
   };
 
+  // ✅ NEW: Get context based on selected mode
+  const getContextForMode = (): FileContext | undefined => {
+    if (!includeFile || !fileContext) return undefined;
+
+    switch (contextMode) {
+      case "selection":
+        // Only send selected text (if any)
+        if (fileContext.selectedText) {
+          return {
+            ...fileContext,
+            fileContent: fileContext.selectedText, // Override with selection
+          };
+        }
+        // If no selection, show warning and fall back to file mode
+        console.warn("⚠️ [ChatView] No selection, falling back to file mode");
+        return fileContext;
+
+      case "file":
+        // Send full file content (default behavior)
+        return fileContext;
+
+      case "project":
+        // Signal to backend to use Smart Context (pgvector search)
+        // We still send file context for reference, but backend will augment with project search
+        return {
+          ...fileContext,
+          // Add marker for backend to know to use project-wide context
+        };
+
+      default:
+        return fileContext;
+    }
+  };
+
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
 
     // ✅ Detect mode from user message
     const mode = detectMode(inputValue);
-    console.log("🎯 [ChatView] Detected mode:", mode);
+    console.log(
+      "🎯 [ChatView] Detected mode:",
+      mode,
+      "| Context mode:",
+      contextMode
+    );
 
-    // ✅ Use EXISTING fileContext from state (updated automatically by extension)
-    console.log("📄 [ChatView] Using file context from state:", {
-      filePath: fileContext?.filePath,
-      contentLength: fileContext?.fileContent?.length,
-      includeFile,
+    // ✅ Get context based on selected context mode
+    const contextToSend = getContextForMode();
+
+    console.log("📄 [ChatView] Using file context:", {
+      filePath: contextToSend?.filePath,
+      contentLength: contextToSend?.fileContent?.length,
+      contextMode,
       mode,
     });
 
@@ -236,19 +298,19 @@ const ChatView: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const contextToSend =
-        includeFile && fileContext ? fileContext : undefined;
-
       console.log("📤 [ChatView] Sending message with context:", {
         hasContext: !!contextToSend,
         filePath: contextToSend?.filePath,
         contentLength: contextToSend?.fileContent?.length,
+        contextMode,
       });
 
+      // ✅ Pass contextMode to sendMessage
       const response = (await sendMessage(
         userMessage.content,
         contextToSend,
-        mode
+        mode,
+        contextMode // NEW: Pass context mode
       )) as ApiResponse;
 
       // ✅ FIX: Unwrap nested data object from backend
@@ -468,6 +530,20 @@ const ChatView: React.FC = () => {
     });
   };
 
+  // ✅ NEW: Get context mode description
+  const getContextModeDescription = (mode: ContextMode): string => {
+    switch (mode) {
+      case "selection":
+        return "AI sees only selected code";
+      case "file":
+        return "AI sees current file";
+      case "project":
+        return "AI uses Smart Context (pgvector)";
+      default:
+        return "";
+    }
+  };
+
   const fileInfo = getFileInfo();
 
   return (
@@ -486,6 +562,43 @@ const ChatView: React.FC = () => {
         )}
       </div>
 
+      {/* ✅ NEW: Context Mode Selector */}
+      <div className="context-mode-bar">
+        <span className="context-mode-label">Context:</span>
+        <div className="context-mode-selector">
+          <button
+            className={`context-mode-btn ${
+              contextMode === "selection" ? "active" : ""
+            }`}
+            onClick={() => setContextMode("selection")}
+            title={getContextModeDescription("selection")}
+          >
+            <span className="mode-icon">✂️</span>
+            <span className="mode-text">Selection</span>
+          </button>
+          <button
+            className={`context-mode-btn ${
+              contextMode === "file" ? "active" : ""
+            }`}
+            onClick={() => setContextMode("file")}
+            title={getContextModeDescription("file")}
+          >
+            <span className="mode-icon">📄</span>
+            <span className="mode-text">File</span>
+          </button>
+          <button
+            className={`context-mode-btn ${
+              contextMode === "project" ? "active" : ""
+            }`}
+            onClick={() => setContextMode("project")}
+            title={getContextModeDescription("project")}
+          >
+            <span className="mode-icon">📁</span>
+            <span className="mode-text">Project</span>
+          </button>
+        </div>
+      </div>
+
       {/* Messages */}
       <div className="chat-messages">
         {messages.length === 0 && !isLoading && (
@@ -496,6 +609,18 @@ const ChatView: React.FC = () => {
               {fileInfo
                 ? `Ask about ${fileInfo.fileName}`
                 : "Open a file to get context-aware answers"}
+            </span>
+            {/* ✅ Show current context mode hint */}
+            <span
+              className="empty-hint"
+              style={{ marginTop: "8px", color: "#4fc3f7" }}
+            >
+              Context:{" "}
+              {contextMode === "selection"
+                ? "✂️ Selection"
+                : contextMode === "file"
+                ? "📄 Active File"
+                : "📁 Full Project"}
             </span>
           </div>
         )}
@@ -544,7 +669,7 @@ const ChatView: React.FC = () => {
                         {renderDiff(
                           message.original_content,
                           message.new_content,
-                          message.file_path || "file.ts" // Передаём путь к файлу
+                          message.file_path || "file.ts"
                         )}
 
                         <div className="diff-actions">
@@ -671,6 +796,10 @@ const ChatView: React.FC = () => {
               <span className="file-badge">{fileInfo.language}</span>
               {fileInfo.hasSelection && (
                 <span className="file-badge selection">Selected</span>
+              )}
+              {/* ✅ NEW: Show context mode badge */}
+              {contextMode === "project" && (
+                <span className="file-badge project">Smart Context</span>
               )}
               <span className="file-meta">{fileInfo.displayText}</span>
             </div>
