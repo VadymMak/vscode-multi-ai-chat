@@ -320,3 +320,196 @@ export const sendMessage = async (
     throw error;
   }
 };
+// ==================== AGENTIC WORKFLOW ====================
+
+// Types for Agentic Workflow
+export interface TaskStep {
+  step_num: number;
+  action: "create" | "edit" | "delete" | "command";
+  file_path: string | null;
+  description: string;
+  dependencies: string[];
+  estimated_complexity: "low" | "medium" | "high";
+  status: "pending" | "in_progress" | "completed" | "failed" | "skipped";
+  result?: any;
+  error?: string;
+}
+
+export interface TaskPlan {
+  plan_id: string;
+  task: string;
+  steps: TaskStep[];
+  total_steps: number;
+  estimated_time: string;
+  tokens_used: number;
+}
+
+export interface ExecuteStepResult {
+  success: boolean;
+  step: TaskStep;
+  result?: {
+    action: string;
+    file_path?: string;
+    new_content?: string;
+    original_content?: string;
+    message?: string;
+    command?: string;
+  };
+  plan_completed: boolean;
+}
+
+/**
+ * Plan a complex task - AI breaks it into steps
+ */
+export const planTask = async (
+  task: string,
+  fileContext?: {
+    filePath?: string;
+    fileContent?: string;
+  }
+): Promise<TaskPlan> => {
+  try {
+    console.log("📋 [apiService] Planning task:", task);
+
+    const projectId = useProjectStore.getState().selectedProjectId;
+
+    if (!projectId) {
+      throw new Error("No project selected");
+    }
+
+    const response = await apiRequest("POST", "/vscode/plan-task", {
+      project_id: projectId,
+      task: task,
+      file_path: fileContext?.filePath || null,
+      file_content: fileContext?.fileContent || null,
+    });
+
+    console.log("✅ [apiService] Plan received:", response);
+
+    const planData = response.data || response;
+
+    return {
+      plan_id: planData.plan_id,
+      task: planData.task,
+      steps: planData.steps,
+      total_steps: planData.total_steps,
+      estimated_time: planData.estimated_time,
+      tokens_used: planData.tokens_used,
+    };
+  } catch (error) {
+    console.error("❌ [apiService] Plan task error:", error);
+    throw error;
+  }
+};
+
+/**
+ * Execute a single step from the plan
+ */
+export const executeStep = async (
+  planId: string,
+  stepNum: number,
+  fileContent?: string
+): Promise<ExecuteStepResult> => {
+  try {
+    console.log(`⚡ [apiService] Executing step ${stepNum} of plan ${planId}`);
+
+    const response = await apiRequest("POST", "/vscode/execute-step", {
+      plan_id: planId,
+      step_num: stepNum,
+      file_content: fileContent || null,
+    });
+
+    console.log("✅ [apiService] Step executed:", response);
+
+    const resultData = response.data || response;
+
+    return {
+      success: resultData.success,
+      step: resultData.step,
+      result: resultData.result,
+      plan_completed: resultData.plan_completed,
+    };
+  } catch (error) {
+    console.error("❌ [apiService] Execute step error:", error);
+    throw error;
+  }
+};
+
+/**
+ * Skip a step in the plan
+ */
+export const skipStep = async (
+  planId: string,
+  stepNum: number
+): Promise<{ success: boolean; plan_completed: boolean }> => {
+  try {
+    console.log(`⏭️ [apiService] Skipping step ${stepNum} of plan ${planId}`);
+
+    const response = await apiRequest("POST", "/vscode/skip-step", {
+      plan_id: planId,
+      step_num: stepNum,
+    });
+
+    console.log("✅ [apiService] Step skipped:", response);
+
+    const resultData = response.data || response;
+
+    return {
+      success: resultData.success,
+      plan_completed: resultData.plan_completed,
+    };
+  } catch (error) {
+    console.error("❌ [apiService] Skip step error:", error);
+    throw error;
+  }
+};
+
+/**
+ * Cancel entire plan
+ */
+export const cancelPlan = async (
+  planId: string
+): Promise<{ success: boolean }> => {
+  try {
+    console.log(`🛑 [apiService] Cancelling plan ${planId}`);
+
+    const response = await apiRequest(
+      "POST",
+      `/vscode/cancel-plan/${planId}`,
+      {}
+    );
+
+    console.log("✅ [apiService] Plan cancelled:", response);
+
+    const resultData = response.data || response;
+
+    return {
+      success: resultData.success,
+    };
+  } catch (error) {
+    console.error("❌ [apiService] Cancel plan error:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get plan status
+ */
+export const getTaskPlan = async (
+  planId: string
+): Promise<TaskPlan & { status: string; completed_steps: number }> => {
+  try {
+    console.log(`📊 [apiService] Getting plan ${planId}`);
+
+    const response = await apiRequest("GET", `/vscode/task-plan/${planId}`);
+
+    console.log("✅ [apiService] Plan status:", response);
+
+    const planData = response.data || response;
+
+    return planData;
+  } catch (error) {
+    console.error("❌ [apiService] Get plan error:", error);
+    throw error;
+  }
+};

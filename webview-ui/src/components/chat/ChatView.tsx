@@ -3,7 +3,16 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Message } from "../../types/index";
-import { sendMessage } from "../../services/apiService";
+import {
+  sendMessage,
+  planTask,
+  executeStep,
+  skipStep,
+  cancelPlan,
+  TaskPlan,
+  TaskStep,
+  ExecuteStepResult,
+} from "../../services/apiService";
 import { vscodeAPI } from "../../utils/vscodeApi";
 import "./ChatView.css";
 import { diffLines } from "diff";
@@ -57,6 +66,13 @@ const ChatView: React.FC = () => {
 
   // ✅ NEW: Context mode state
   const [contextMode, setContextMode] = useState<ContextMode>("file");
+
+  // ✅ NEW: Agentic Workflow state
+  const [activePlan, setActivePlan] = useState<TaskPlan | null>(null);
+  const [executingStep, setExecutingStep] = useState<number | null>(null);
+  const [stepResults, setStepResults] = useState<
+    Record<number, ExecuteStepResult>
+  >({});
 
   useEffect(() => {
     const savedMessages = loadMessagesFromStorage();
@@ -210,6 +226,49 @@ const ChatView: React.FC = () => {
     return "chat";
   };
 
+  // ✅ NEW: Detect if message is an agentic task
+  const isAgenticTask = (message: string): boolean => {
+    const lowerMessage = message.toLowerCase();
+
+    const agenticKeywords = [
+      "implement",
+      "build feature",
+      "add feature",
+      "create system",
+      "set up",
+      "setup",
+      "integrate",
+      "build out",
+      "develop",
+      "architect",
+      "design and implement",
+      "full implementation",
+      "end to end",
+      "e2e",
+      "complete implementation",
+      "add authentication",
+      "add authorization",
+      "add api",
+      "add crud",
+      "refactor entire",
+      "restructure",
+    ];
+
+    // Check if message suggests multi-step task
+    const hasAgenticKeyword = agenticKeywords.some((keyword) =>
+      lowerMessage.includes(keyword)
+    );
+
+    // Also check for long, complex requests (>50 chars with action words)
+    const isComplexRequest =
+      message.length > 50 &&
+      (lowerMessage.includes("and") ||
+        lowerMessage.includes("with") ||
+        lowerMessage.includes("including"));
+
+    return hasAgenticKeyword || isComplexRequest;
+  };
+
   const refreshFileContext = () => {
     requestFileContext();
   };
@@ -262,27 +321,193 @@ const ChatView: React.FC = () => {
     }
   };
 
+  // ✅ NEW: Handle agentic task planning
+  const handlePlanTask = async (task: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      console.log("📋 [ChatView] Planning task:", task);
+
+      const plan = await planTask(
+        task,
+        fileContext
+          ? {
+              filePath: fileContext.filePath,
+              fileContent: fileContext.fileContent,
+            }
+          : undefined
+      );
+
+      console.log("✅ [ChatView] Plan received:", plan);
+
+      setActivePlan(plan);
+      setStepResults({});
+
+      // Add plan as AI message
+      const planMessage: ExtendedMessage = {
+        id: Date.now().toString(),
+        content: `📋 **Task Plan Created**\n\n**Task:** ${plan.task}\n**Steps:** ${plan.total_steps}\n**Estimated Time:** ${plan.estimated_time}`,
+        sender: "ai",
+        timestamp: new Date().toISOString(),
+        response_type: "plan" as any,
+      };
+
+      setMessages((prev) => [...prev, planMessage]);
+    } catch (err) {
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ✅ NEW: Execute a single step
+  const handleExecuteStep = async (stepNum: number) => {
+    if (!activePlan || executingStep !== null) return;
+
+    setExecutingStep(stepNum);
+    setError(null);
+
+    try {
+      const step = activePlan.steps[stepNum - 1];
+      console.log(`⚡ [ChatView] Executing step ${stepNum}:`, step.description);
+
+      // For edit steps, we need to get current file content
+      let fileContent: string | undefined;
+      if (step.action === "edit" && step.file_path) {
+        // Request file content from extension
+        // For now, use fileContext if it matches
+        if (
+          fileContext?.filePath?.endsWith(step.file_path.split("/").pop() || "")
+        ) {
+          fileContent = fileContext.fileContent;
+        }
+      }
+
+      const result = await executeStep(
+        activePlan.plan_id,
+        stepNum,
+        fileContent
+      );
+
+      console.log(`✅ [ChatView] Step ${stepNum} result:`, result);
+
+      // Update step results
+      setStepResults((prev) => ({
+        ...prev,
+        [stepNum]: result,
+      }));
+
+      // Update plan steps status
+      setActivePlan((prev) => {
+        if (!prev) return prev;
+        const updatedSteps = [...prev.steps];
+        updatedSteps[stepNum - 1] = result.step;
+        return { ...prev, steps: updatedSteps };
+      });
+
+      // If plan completed, show completion message
+      if (result.plan_completed) {
+        const completionMessage: ExtendedMessage = {
+          id: Date.now().toString(),
+          content: `🎉 **Task Completed!**\n\nAll steps have been executed successfully.`,
+          sender: "ai",
+          timestamp: new Date().toISOString(),
+          response_type: "chat",
+        };
+        setMessages((prev) => [...prev, completionMessage]);
+        setActivePlan(null);
+      }
+    } catch (err) {
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+
+      // Mark step as failed
+      setActivePlan((prev) => {
+        if (!prev) return prev;
+        const updatedSteps = [...prev.steps];
+        updatedSteps[stepNum - 1] = {
+          ...updatedSteps[stepNum - 1],
+          status: "failed",
+          error: errorMessage,
+        };
+        return { ...prev, steps: updatedSteps };
+      });
+    } finally {
+      setExecutingStep(null);
+    }
+  };
+
+  // ✅ NEW: Skip a step
+  const handleSkipStep = async (stepNum: number) => {
+    if (!activePlan) return;
+
+    try {
+      console.log(`⏭️ [ChatView] Skipping step ${stepNum}`);
+
+      const result = await skipStep(activePlan.plan_id, stepNum);
+
+      // Update plan
+      setActivePlan((prev) => {
+        if (!prev) return prev;
+        const updatedSteps = [...prev.steps];
+        updatedSteps[stepNum - 1] = {
+          ...updatedSteps[stepNum - 1],
+          status: "skipped",
+        };
+        return { ...prev, steps: updatedSteps };
+      });
+
+      if (result.plan_completed) {
+        setActivePlan(null);
+      }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  // ✅ NEW: Cancel entire plan
+  const handleCancelPlan = async () => {
+    if (!activePlan) return;
+
+    try {
+      console.log(`🛑 [ChatView] Cancelling plan ${activePlan.plan_id}`);
+
+      await cancelPlan(activePlan.plan_id);
+
+      setActivePlan(null);
+      setStepResults({});
+
+      const cancelMessage: ExtendedMessage = {
+        id: Date.now().toString(),
+        content: `🛑 **Task Cancelled**`,
+        sender: "ai",
+        timestamp: new Date().toISOString(),
+        response_type: "chat",
+      };
+      setMessages((prev) => [...prev, cancelMessage]);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  // ✅ NEW: Apply step result (create/edit file)
+  const handleApplyStepResult = (stepNum: number) => {
+    const result = stepResults[stepNum];
+    if (!result?.result) return;
+
+    const { action, file_path, new_content } = result.result;
+
+    if (action === "create" && file_path && new_content) {
+      createFile(file_path, new_content);
+    } else if (action === "edit" && file_path && new_content) {
+      applyFileEdit(file_path, new_content);
+    }
+  };
+
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
-
-    // ✅ Detect mode from user message
-    const mode = detectMode(inputValue);
-    console.log(
-      "🎯 [ChatView] Detected mode:",
-      mode,
-      "| Context mode:",
-      contextMode
-    );
-
-    // ✅ Get context based on selected context mode
-    const contextToSend = getContextForMode();
-
-    console.log("📄 [ChatView] Using file context:", {
-      filePath: contextToSend?.filePath,
-      contentLength: contextToSend?.fileContent?.length,
-      contextMode,
-      mode,
-    });
 
     const userMessage: ExtendedMessage = {
       id: Date.now().toString(),
@@ -293,8 +518,35 @@ const ChatView: React.FC = () => {
     };
 
     setMessages((prevMessages) => [...prevMessages, userMessage]);
+    const currentInput = inputValue;
     setInputValue("");
     setError(null);
+
+    // ✅ NEW: Check if this is an agentic task
+    if (isAgenticTask(currentInput)) {
+      console.log("🤖 [ChatView] Detected agentic task, planning...");
+      await handlePlanTask(currentInput);
+      return;
+    }
+
+    // ✅ Regular chat/edit/create flow
+    const mode = detectMode(currentInput);
+    console.log(
+      "🎯 [ChatView] Detected mode:",
+      mode,
+      "| Context mode:",
+      contextMode
+    );
+
+    const contextToSend = getContextForMode();
+
+    console.log("📄 [ChatView] Using file context:", {
+      filePath: contextToSend?.filePath,
+      contentLength: contextToSend?.fileContent?.length,
+      contextMode,
+      mode,
+    });
+
     setIsLoading(true);
 
     try {
@@ -305,15 +557,13 @@ const ChatView: React.FC = () => {
         contextMode,
       });
 
-      // ✅ Pass contextMode to sendMessage
       const response = (await sendMessage(
-        userMessage.content,
+        currentInput,
         contextToSend,
         mode,
-        contextMode // NEW: Pass context mode
+        contextMode
       )) as ApiResponse;
 
-      // ✅ FIX: Unwrap nested data object from backend
       const actualResponse = (response.data || response) as ExtendedMessage;
 
       console.log("🔍 [ChatView] Response structure:", {
@@ -546,6 +796,175 @@ const ChatView: React.FC = () => {
 
   const fileInfo = getFileInfo();
 
+  // ✅ NEW: Render the active plan UI
+  const renderPlanView = () => {
+    if (!activePlan) return null;
+
+    const completedSteps = activePlan.steps.filter(
+      (s) => s.status === "completed"
+    ).length;
+    const progress = (completedSteps / activePlan.total_steps) * 100;
+
+    return (
+      <div className="plan-view">
+        <div className="plan-header">
+          <div className="plan-title">
+            <span className="plan-icon">📋</span>
+            <span className="plan-text">Task Plan</span>
+            <span className="plan-id">#{activePlan.plan_id}</span>
+          </div>
+          <div className="plan-meta">
+            <span className="plan-progress">
+              {completedSteps}/{activePlan.total_steps} steps
+            </span>
+            <span className="plan-time">⏱️ {activePlan.estimated_time}</span>
+          </div>
+        </div>
+
+        <div className="plan-progress-bar">
+          <div
+            className="plan-progress-fill"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+
+        <div className="plan-task">
+          <strong>Task:</strong> {activePlan.task}
+        </div>
+
+        <div className="plan-steps">
+          {activePlan.steps.map((step, index) => {
+            const stepNum = index + 1;
+            const isExecuting = executingStep === stepNum;
+            const result = stepResults[stepNum];
+
+            return (
+              <div
+                key={stepNum}
+                className={`plan-step ${step.status} ${
+                  isExecuting ? "executing" : ""
+                }`}
+              >
+                <div className="step-header">
+                  <span className="step-number">
+                    {step.status === "completed"
+                      ? "✅"
+                      : step.status === "failed"
+                      ? "❌"
+                      : step.status === "skipped"
+                      ? "⏭️"
+                      : isExecuting
+                      ? "⏳"
+                      : stepNum}
+                  </span>
+                  <span className="step-action">
+                    {step.action.toUpperCase()}
+                  </span>
+                  {step.file_path && (
+                    <span className="step-file">{step.file_path}</span>
+                  )}
+                  <span
+                    className={`step-complexity ${step.estimated_complexity}`}
+                  >
+                    {step.estimated_complexity}
+                  </span>
+                </div>
+
+                <div className="step-description">{step.description}</div>
+
+                {step.error && (
+                  <div className="step-error">❌ {step.error}</div>
+                )}
+
+                {/* Show result preview for completed create/edit steps */}
+                {result?.result?.new_content && step.status === "completed" && (
+                  <div className="step-result-preview">
+                    <div className="result-header">
+                      <span>Generated Code Preview</span>
+                      <button
+                        className="apply-step-btn"
+                        onClick={() => handleApplyStepResult(stepNum)}
+                      >
+                        ✅ Apply
+                      </button>
+                    </div>
+                    <pre className="result-code">
+                      {result.result.new_content.slice(0, 500)}
+                      {result.result.new_content.length > 500 ? "..." : ""}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Show command for command steps */}
+                {result?.result?.command && step.status === "completed" && (
+                  <div className="step-command">
+                    <code>{result.result.command}</code>
+                    <button
+                      className="copy-cmd-btn"
+                      onClick={() => handleCopy(result.result!.command!)}
+                    >
+                      📋
+                    </button>
+                  </div>
+                )}
+
+                {/* Action buttons for pending steps */}
+                {step.status === "pending" && !isExecuting && (
+                  <div className="step-actions">
+                    <button
+                      className="execute-btn"
+                      onClick={() => handleExecuteStep(stepNum)}
+                      disabled={executingStep !== null}
+                    >
+                      ▶️ Execute
+                    </button>
+                    <button
+                      className="skip-btn"
+                      onClick={() => handleSkipStep(stepNum)}
+                      disabled={executingStep !== null}
+                    >
+                      ⏭️ Skip
+                    </button>
+                  </div>
+                )}
+
+                {isExecuting && (
+                  <div className="step-executing">
+                    <span className="executing-spinner">⏳</span>
+                    Executing...
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="plan-actions">
+          <button
+            className="execute-all-btn"
+            onClick={async () => {
+              for (const step of activePlan.steps) {
+                if (step.status === "pending") {
+                  await handleExecuteStep(step.step_num);
+                }
+              }
+            }}
+            disabled={executingStep !== null}
+          >
+            ▶️ Execute All Remaining
+          </button>
+          <button
+            className="cancel-plan-btn"
+            onClick={handleCancelPlan}
+            disabled={executingStep !== null}
+          >
+            🛑 Cancel Plan
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="chat-view">
       {/* Header */}
@@ -773,6 +1192,9 @@ const ChatView: React.FC = () => {
         {error && <div className="error">{error}</div>}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* ✅ NEW: Active Plan View */}
+      {activePlan && renderPlanView()}
 
       {/* File Context Indicator */}
       <div className="file-context-bar">

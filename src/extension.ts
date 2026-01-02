@@ -10,6 +10,8 @@ import { showDependencies } from "./commands/showDependencies";
 import { findError } from "./commands/findError";
 import { setupFileWatcher } from "./services/incrementalIndexer";
 import { editFile } from "./commands/editFile";
+import TerminalWatcher from "./services/terminalWatcher";
+import { errorFixer } from "./services/errorFixer";
 import { SidebarProvider } from "./panels/sidebarProvider";
 
 // Store selected project ID (will be updated from MainPanel)
@@ -50,6 +52,39 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
   logger.info("✅ Sidebar provider registered");
+
+  // Initialize Terminal Watcher for auto error detection
+  console.log("🟡 [DEBUG] Setting up Terminal Watcher...");
+  const terminalWatcher = TerminalWatcher.getInstance();
+  terminalWatcher.startWatching(context);
+
+  // Register error detection callback - uses new ErrorFixer system
+  const errorDetectionDisposable = terminalWatcher.onErrorDetected(
+    async (detectedError) => {
+      console.log(
+        "🔴 [DEBUG] Error detected:",
+        detectedError.text.substring(0, 100)
+      );
+
+      // Convert to DetectedError format
+      const error = {
+        text: detectedError.text,
+        filePath: null as string | null,
+        line: null as number | null,
+        source:
+          detectedError.terminalName === "Diagnostics"
+            ? ("diagnostics" as const)
+            : ("terminal" as const),
+        timestamp: detectedError.timestamp,
+        sourceName: detectedError.terminalName,
+      };
+
+      // Use ErrorFixer to handle
+      await errorFixer.handleError(error, currentProjectId);
+    }
+  );
+  context.subscriptions.push(errorDetectionDisposable);
+  logger.info("✅ Terminal Watcher initialized");
 
   console.log("🟡 [DEBUG] About to register openPanelCommand");
 

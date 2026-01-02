@@ -487,6 +487,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
           case "writeFile":
             console.log("✏️ [SidebarProvider] Writing file:", message.filePath);
+            console.log(
+              "✏️ [SidebarProvider] Content length:",
+              message.content?.length
+            );
+            console.log(
+              "✏️ [SidebarProvider] Content preview:",
+              message.content?.substring(0, 100)
+            );
             try {
               const absolutePath = path.isAbsolute(message.filePath)
                 ? message.filePath
@@ -495,7 +503,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     message.filePath
                   );
 
+              console.log("✏️ [SidebarProvider] Absolute path:", absolutePath);
+              console.log(
+                "✏️ [SidebarProvider] Workspace:",
+                vscode.workspace.workspaceFolders![0].uri.fsPath
+              );
+
               fs.writeFileSync(absolutePath, message.content, "utf-8");
+              console.log("✅ [SidebarProvider] File written successfully!");
 
               const { closeDiffEditor } = await import("../commands/viewDiff");
               await closeDiffEditor(message.filePath);
