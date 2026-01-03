@@ -9,7 +9,12 @@ import config from "../config";
 import AuthManager from "../auth/authManager";
 import { APIError } from "../errors";
 import logger from "../utils/logger";
-import { APIResponse, DataRequest } from "../types/index";
+import {
+  APIResponse,
+  DataRequest,
+  FileDependency,
+  SaveDependenciesResponse,
+} from "../types/index";
 
 // Create an Axios instance with default configuration
 const apiClient: AxiosInstance = axios.create({
@@ -114,6 +119,59 @@ export const remove = async (url: string): Promise<APIResponse> => {
     return response.data;
   } catch (error) {
     logger.error("DELETE request failed", error as Error);
+    throw error;
+  }
+};
+
+// ============================================
+// Dependencies API
+// ============================================
+
+export const saveDependencies = async (
+  projectId: number,
+  dependencies: FileDependency[]
+): Promise<SaveDependenciesResponse> => {
+  try {
+    console.log("📍 API Base URL:", apiClient.defaults.baseURL);
+    console.log(
+      "📍 Full URL will be:",
+      apiClient.defaults.baseURL + "/api/vscode/save-dependencies"
+    );
+    console.log("📍 Dependencies count:", dependencies.length);
+    const response = await apiClient.post<SaveDependenciesResponse>(
+      "/vscode/save-dependencies",
+      {
+        project_id: projectId,
+        dependencies: dependencies.map((dep) => ({
+          source_file: dep.sourceFile,
+          target_file: dep.targetFile,
+          dependency_type: dep.dependencyType,
+          imports_what: dep.importsWhat,
+        })),
+      }
+    );
+    return response.data;
+  } catch (error) {
+    logger.error("Save dependencies failed", error as Error);
+    throw error;
+  }
+};
+
+/**
+ * Get dependencies for a specific file
+ */
+export const getFileDependencies = async (
+  projectId: number,
+  filePath: string
+): Promise<FileDependency[]> => {
+  try {
+    const response = await apiClient.get<{ dependencies: FileDependency[] }>(
+      `/api/vscode/file-dependencies/${projectId}`,
+      { params: { file_path: filePath } } as any
+    );
+    return response.data.dependencies || [];
+  } catch (error) {
+    logger.error("Get file dependencies failed", error as Error);
     throw error;
   }
 };

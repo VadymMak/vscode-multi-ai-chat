@@ -1,8 +1,10 @@
 // src/services/fileIndexerService.ts
 import * as vscode from "vscode";
 import * as path from "path";
-import { post } from "../api/apiClient";
+import { post, saveDependencies } from "../api/apiClient";
 import logger from "../utils/logger";
+import { dependencyExtractor } from "./dependencyExtractor";
+import { FileDependency } from "../types";
 
 // Supported file extensions (same as backend)
 const SUPPORTED_EXTENSIONS = [
@@ -223,6 +225,43 @@ export async function indexWorkspace(projectId: number): Promise<IndexResult> {
   };
 
   logger.info(`✅ Indexing complete: ${result.message}`);
+  // Extract and save dependencies
+  logger.info(`🔗 Extracting dependencies...`);
+  const allDependencies: FileDependency[] = [];
+
+  for (const file of files) {
+    try {
+      const analysis = dependencyExtractor.analyzeFile(file.content, file.path);
+
+      for (const imp of analysis.imports) {
+        // Only save relative imports (project files)
+        if (dependencyExtractor.isRelativeImport(imp.targetModule)) {
+          allDependencies.push({
+            projectId: projectId,
+            sourceFile: file.path,
+            targetFile: imp.targetModule,
+            dependencyType: imp.importType,
+            importsWhat: imp.importsWhat,
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn(`Failed to extract deps from ${file.path}`);
+    }
+  }
+
+  if (allDependencies.length > 0) {
+    console.log(
+      "📦 Sample dependencies:",
+      JSON.stringify(allDependencies.slice(0, 5), null, 2)
+    );
+    try {
+      const depsResult = await saveDependencies(projectId, allDependencies);
+      logger.info(`🔗 Saved ${depsResult.saved} dependencies`);
+    } catch (err) {
+      logger.warn(`Failed to save dependencies: ${err}`);
+    }
+  }
   return result;
 }
 
