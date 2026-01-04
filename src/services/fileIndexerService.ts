@@ -251,12 +251,19 @@ export async function indexWorkspace(projectId: number): Promise<IndexResult> {
   }
 
   if (allDependencies.length > 0) {
-    console.log(
-      "📦 Sample dependencies:",
-      JSON.stringify(allDependencies.slice(0, 5), null, 2)
+    // Deduplicate dependencies (same source+target)
+    const uniqueDeps = Array.from(
+      new Map(
+        allDependencies.map((d) => [`${d.sourceFile}:${d.targetFile}`, d])
+      ).values()
     );
+
+    console.log(
+      `📦 Unique dependencies: ${uniqueDeps.length} (from ${allDependencies.length})`
+    );
+
     try {
-      const depsResult = await saveDependencies(projectId, allDependencies);
+      const depsResult = await saveDependencies(projectId, uniqueDeps);
       logger.info(`🔗 Saved ${depsResult.saved} dependencies`);
     } catch (err) {
       logger.warn(`Failed to save dependencies: ${err}`);

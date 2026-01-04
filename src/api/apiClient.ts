@@ -132,12 +132,6 @@ export const saveDependencies = async (
   dependencies: FileDependency[]
 ): Promise<SaveDependenciesResponse> => {
   try {
-    console.log("📍 API Base URL:", apiClient.defaults.baseURL);
-    console.log(
-      "📍 Full URL will be:",
-      apiClient.defaults.baseURL + "/api/vscode/save-dependencies"
-    );
-    console.log("📍 Dependencies count:", dependencies.length);
     const response = await apiClient.post<SaveDependenciesResponse>(
       "/vscode/save-dependencies",
       {
