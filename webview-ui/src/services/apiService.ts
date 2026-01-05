@@ -79,7 +79,7 @@ async function apiRequest(
         delete pendingRequests[requestId];
         reject(new Error("Request timeout"));
       }
-    }, 60000);
+    }, 180000);
   });
 }
 
