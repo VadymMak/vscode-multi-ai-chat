@@ -160,7 +160,7 @@ export const getFileDependencies = async (
 ): Promise<FileDependency[]> => {
   try {
     const response = await apiClient.get<{ dependencies: FileDependency[] }>(
-      `/api/vscode/file-dependencies/${projectId}`,
+      `/vscode/file-dependencies/${projectId}`,
       { params: { file_path: filePath } } as any
     );
     return response.data.dependencies || [];

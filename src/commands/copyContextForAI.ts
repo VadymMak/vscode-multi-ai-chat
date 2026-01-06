@@ -106,14 +106,19 @@ export async function copyContextForAI(
       try {
         progress.report({ message: "Resolving dependencies..." });
 
+        logger.info(
+          `[CopyContext] File: ${filePath}, Imports: ${imports.length}`
+        );
+        logger.info(`[CopyContext] Imports list: ${JSON.stringify(imports)}`);
+
         // 5. Call backend API
         const response = await copyContextAPI(
           projectId,
           filePath,
           fileContent,
           imports,
-          5, // maxFiles
-          4000 // maxTokens
+          50, // maxFiles
+          200000 // maxTokens
         );
 
         if (!response.success) {

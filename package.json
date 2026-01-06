@@ -154,6 +154,11 @@
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "multi-ai-chat.copyContextForAI",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c"
       }
     ],
     "menus": {
