@@ -170,4 +170,48 @@ export const getFileDependencies = async (
   }
 };
 
+// ============================================
+// Copy Context for AI
+// ============================================
+
+export interface CopyContextResponse {
+  success: boolean;
+  context_markdown: string;
+  files_included: number;
+  estimated_tokens: number;
+  dependencies: Array<{
+    file_path: string;
+    language: string;
+    chars: number;
+    source: string;
+    similarity?: number;
+  }>;
+}
+
+/**
+ * Copy context for AI chat - builds markdown with file + dependencies
+ */
+export const copyContextForAI = async (
+  projectId: number,
+  filePath: string,
+  fileContent: string,
+  imports: string[],
+  maxFiles: number = 5,
+  maxTokens: number = 4000
+): Promise<CopyContextResponse> => {
+  const response = await apiClient.post<CopyContextResponse>(
+    "/vscode/copy-context",
+    {
+      project_id: projectId,
+      file_path: filePath,
+      file_content: fileContent,
+      imports: imports,
+      max_files: maxFiles,
+      max_tokens: maxTokens,
+      include_metadata: true,
+    }
+  );
+  return response.data;
+};
+
 export default apiClient;

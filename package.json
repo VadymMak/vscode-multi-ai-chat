@@ -114,6 +114,14 @@
         "command": "multi-ai-chat.focus",
         "title": "Focus on Multi AI Chat",
         "category": "Multi AI Chat"
+      },
+      {
+        "command": "multi-ai-chat.copyContextForAI",
+        "title": "Smart Cline: Copy Context for AI Chat"
+      },
+      {
+        "command": "multi-ai-chat.copyCurrentFileForAI",
+        "title": "Smart Cline: Copy Current File for AI"
       }
     ],
     "keybindings": [

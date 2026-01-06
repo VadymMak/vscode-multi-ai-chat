@@ -13,6 +13,10 @@ import { editFile } from "./commands/editFile";
 import TerminalWatcher from "./services/terminalWatcher";
 import { errorFixer } from "./services/errorFixer";
 import { SidebarProvider } from "./panels/sidebarProvider";
+import {
+  copyContextForAI,
+  copyCurrentFileForAI,
+} from "./commands/copyContextForAI";
 
 // Store selected project ID (will be updated from MainPanel)
 let currentProjectId: number | null = null;
@@ -200,6 +204,30 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  console.log("🟡 [DEBUG] About to register copyContextCommand");
+
+  const copyContextCommand = vscode.commands.registerCommand(
+    "multi-ai-chat.copyContextForAI",
+    () => {
+      console.log("🔵 [DEBUG] COPY CONTEXT FOR AI COMMAND TRIGGERED!");
+      copyContextForAI(currentProjectId);
+    }
+  );
+
+  console.log("🟡 [DEBUG] copyContextCommand registered successfully!");
+
+  console.log("🟡 [DEBUG] About to register copyCurrentFileCommand");
+
+  const copyCurrentFileCommand = vscode.commands.registerCommand(
+    "multi-ai-chat.copyCurrentFileForAI",
+    () => {
+      console.log("🔵 [DEBUG] COPY CURRENT FILE FOR AI COMMAND TRIGGERED!");
+      copyCurrentFileForAI();
+    }
+  );
+
+  console.log("🟡 [DEBUG] copyCurrentFileCommand registered successfully!");
+
   console.log("🟡 [DEBUG] editFileCommand registered successfully!");
 
   console.log("🟡 [DEBUG] About to push all commands to subscriptions");
@@ -221,6 +249,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(editFileCommand);
   console.log("🟡 [DEBUG] ✅ Pushed editFileCommand");
+
+  context.subscriptions.push(copyContextCommand);
+  console.log("🟡 [DEBUG] ✅ Pushed copyContextCommand");
+
+  context.subscriptions.push(copyCurrentFileCommand);
+  console.log("🟡 [DEBUG] ✅ Pushed copyCurrentFileCommand");
 
   console.log("🟡 [DEBUG] All commands pushed to subscriptions successfully!");
 
