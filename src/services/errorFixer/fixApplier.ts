@@ -49,6 +49,9 @@ class FixApplier {
       const applied = await this.applyToFile(fix, fileUri);
 
       if (applied) {
+        // ✅ NEW: Close diff preview tabs
+        await this.closeDiffPreviews();
+
         // Show notification if requested
         if (options.showNotification) {
           vscode.window.showInformationMessage(
@@ -78,6 +81,24 @@ class FixApplier {
         message: `Error applying fix: ${errorMsg}`,
         error: errorMsg,
       };
+    }
+  }
+
+  /**
+   * Close all diff preview tabs
+   */
+  private async closeDiffPreviews(): Promise<void> {
+    const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
+
+    for (const tab of tabs) {
+      // Close tabs that are diff previews (Untitled documents)
+      if (tab.label.includes("Fix Preview") || tab.label.includes("Untitled")) {
+        try {
+          await vscode.window.tabGroups.close(tab);
+        } catch {
+          // Ignore errors
+        }
+      }
     }
   }
 
@@ -164,9 +185,6 @@ class FixApplier {
       "❌ Reject",
       "👁️ View Explanation"
     );
-
-    // ✅ NEW: Close diff preview after choice
-    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
 
     if (choice === "👁️ View Explanation") {
       await vscode.window.showInformationMessage(fix.explanation, {
