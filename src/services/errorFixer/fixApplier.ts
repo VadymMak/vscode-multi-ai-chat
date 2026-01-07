@@ -159,11 +159,14 @@ class FixApplier {
     // Ask user
     const choice = await vscode.window.showInformationMessage(
       `Apply this fix? (${fix.fixType})`,
-      { modal: true }, // ← modal: true - не исчезнет!
+      { modal: true },
       "✅ Apply",
       "❌ Reject",
       "👁️ View Explanation"
     );
+
+    // ✅ NEW: Close diff preview after choice
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
 
     if (choice === "👁️ View Explanation") {
       await vscode.window.showInformationMessage(fix.explanation, {
