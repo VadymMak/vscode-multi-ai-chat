@@ -1,6 +1,8 @@
 /**
  * Fix Applier
  * Applies generated fixes to files with diff preview
+ *
+ * Uses Virtual Documents for diff preview - no "Save?" prompts!
  */
 
 import * as vscode from "vscode";
@@ -8,10 +10,69 @@ import logger from "../../utils/logger";
 import { GeneratedFix, FixResult, FixOptions } from "../../types";
 
 // ============================================
+// VIRTUAL DOCUMENT PROVIDER (for clean diff)
+// ============================================
+
+const SCHEME_ORIGINAL = "smartcline-original";
+const SCHEME_MODIFIED = "smartcline-modified";
+
+// Store content for virtual documents
+const virtualDocuments = new Map<string, string>();
+
+class VirtualDocProvider implements vscode.TextDocumentContentProvider {
+  onDidChangeEmitter = new vscode.EventEmitter<vscode.Uri>();
+  onDidChange = this.onDidChangeEmitter.event;
+
+  provideTextDocumentContent(uri: vscode.Uri): string {
+    return virtualDocuments.get(uri.toString()) || "";
+  }
+}
+
+// Singleton providers
+let providersRegistered = false;
+
+function registerVirtualProviders(context?: vscode.ExtensionContext): void {
+  if (providersRegistered) return;
+
+  const provider = new VirtualDocProvider();
+
+  // Register for both schemes
+  const sub1 = vscode.workspace.registerTextDocumentContentProvider(
+    SCHEME_ORIGINAL,
+    provider
+  );
+  const sub2 = vscode.workspace.registerTextDocumentContentProvider(
+    SCHEME_MODIFIED,
+    provider
+  );
+
+  if (context) {
+    context.subscriptions.push(sub1, sub2);
+  }
+
+  providersRegistered = true;
+  logger.debug("Virtual document providers registered");
+}
+
+// ============================================
 // FIX APPLIER CLASS
 // ============================================
 
 class FixApplier {
+  private diffTabId: string | null = null;
+
+  constructor() {
+    // Register providers on first use
+    registerVirtualProviders();
+  }
+
+  /**
+   * Initialize with extension context (call from extension.ts)
+   */
+  public initialize(context: vscode.ExtensionContext): void {
+    registerVirtualProviders(context);
+  }
+
   /**
    * Apply fix to file
    */
@@ -49,9 +110,6 @@ class FixApplier {
       const applied = await this.applyToFile(fix, fileUri);
 
       if (applied) {
-        // ✅ NEW: Close diff preview tabs
-        await this.closeDiffPreviews();
-
         // Show notification if requested
         if (options.showNotification) {
           vscode.window.showInformationMessage(
@@ -81,25 +139,6 @@ class FixApplier {
         message: `Error applying fix: ${errorMsg}`,
         error: errorMsg,
       };
-    }
-  }
-
-  /**
-   * Close all diff preview tabs without saving
-   */
-  private async closeDiffPreviews(): Promise<void> {
-    const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
-
-    for (const tab of tabs) {
-      // Close tabs that are diff previews (Untitled documents)
-      if (tab.label.includes("Fix Preview") || tab.label.includes("Untitled")) {
-        try {
-          // Close without saving (don't prompt)
-          await vscode.window.tabGroups.close(tab, false);
-        } catch {
-          // Ignore errors
-        }
-      }
     }
   }
 
@@ -146,6 +185,7 @@ class FixApplier {
 
   /**
    * Show diff preview and ask for confirmation
+   * Uses virtual documents - no "Save?" prompts!
    */
   private async showDiffAndConfirm(
     fix: GeneratedFix,
@@ -158,27 +198,31 @@ class FixApplier {
     // Create preview of changes
     const previewContent = this.createPreviewContent(fullContent, fix);
 
-    // Create temp documents for diff
-    const originalDoc = await vscode.workspace.openTextDocument({
-      content: fullContent,
-      language: document.languageId,
-    });
+    // Create unique ID for this diff
+    const diffId = Date.now().toString();
+    this.diffTabId = diffId;
 
-    const modifiedDoc = await vscode.workspace.openTextDocument({
-      content: previewContent,
-      language: document.languageId,
-    });
+    // Store content in virtual documents
+    const originalUri = vscode.Uri.parse(
+      `${SCHEME_ORIGINAL}:/${diffId}/original.${document.languageId}`
+    );
+    const modifiedUri = vscode.Uri.parse(
+      `${SCHEME_MODIFIED}:/${diffId}/modified.${document.languageId}`
+    );
+
+    virtualDocuments.set(originalUri.toString(), fullContent);
+    virtualDocuments.set(modifiedUri.toString(), previewContent);
 
     // Show diff
     const fileName = fix.filePath.split(/[/\\]/).pop() || "file";
     await vscode.commands.executeCommand(
       "vscode.diff",
-      originalDoc.uri,
-      modifiedDoc.uri,
+      originalUri,
+      modifiedUri,
       `🔧 Fix Preview: ${fileName}`
     );
 
-    // Ask user
+    // Ask user with modal dialog
     const choice = await vscode.window.showInformationMessage(
       `Apply this fix? (${fix.fixType})`,
       { modal: true },
@@ -187,6 +231,13 @@ class FixApplier {
       "👁️ View Explanation"
     );
 
+    // Close diff tab (virtual docs close without prompts!)
+    await this.closeDiffTab();
+
+    // Clean up virtual documents
+    virtualDocuments.delete(originalUri.toString());
+    virtualDocuments.delete(modifiedUri.toString());
+
     if (choice === "👁️ View Explanation") {
       await vscode.window.showInformationMessage(fix.explanation, {
         modal: true,
@@ -194,6 +245,7 @@ class FixApplier {
       // Ask again
       const secondChoice = await vscode.window.showInformationMessage(
         `Apply this fix?`,
+        { modal: true },
         "✅ Apply",
         "❌ Reject"
       );
@@ -201,6 +253,38 @@ class FixApplier {
     }
 
     return choice === "✅ Apply";
+  }
+
+  /**
+   * Close the diff tab
+   */
+  private async closeDiffTab(): Promise<void> {
+    try {
+      // Find and close tabs with our virtual scheme
+      const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
+
+      for (const tab of tabs) {
+        const input = tab.input as any;
+
+        // Check if it's our diff tab (has our scheme in URI)
+        if (
+          input?.original?.scheme === SCHEME_ORIGINAL ||
+          input?.modified?.scheme === SCHEME_MODIFIED ||
+          tab.label.includes("Fix Preview")
+        ) {
+          await vscode.window.tabGroups.close(tab);
+        }
+      }
+    } catch (err) {
+      // Fallback: close active editor
+      try {
+        await vscode.commands.executeCommand(
+          "workbench.action.closeActiveEditor"
+        );
+      } catch {
+        // Ignore
+      }
+    }
   }
 
   /**
