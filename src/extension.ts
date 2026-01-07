@@ -17,10 +17,6 @@ import {
   copyContextForAI,
   copyCurrentFileForAI,
 } from "./commands/copyContextForAI";
-import {
-  initErrorReporter,
-  disposeErrorReporter,
-} from "./services/errorReporter";
 
 // Store selected project ID (will be updated from MainPanel)
 let currentProjectId: number | null = null;
@@ -61,6 +57,11 @@ export function activate(context: vscode.ExtensionContext) {
   );
   logger.info("✅ Sidebar provider registered");
 
+  // ✅ NEW: Initialize ErrorFixer v2 (status bar + quick fix + auto-learning)
+  console.log("🟡 [DEBUG] Initializing ErrorFixer v2...");
+  errorFixer.initialize(context);
+  logger.info("✅ ErrorFixer v2 initialized");
+
   // Initialize Terminal Watcher for auto error detection
   console.log("🟡 [DEBUG] Setting up Terminal Watcher...");
   const terminalWatcher = TerminalWatcher.getInstance();
@@ -87,16 +88,12 @@ export function activate(context: vscode.ExtensionContext) {
         sourceName: detectedError.terminalName,
       };
 
-      // Use ErrorFixer to handle
+      // Use ErrorFixer to handle (v2: no popup, just logs)
       await errorFixer.handleError(error, currentProjectId);
     }
   );
   context.subscriptions.push(errorDetectionDisposable);
   logger.info("✅ Terminal Watcher initialized");
-
-  console.log("🟡 [DEBUG] About to register openPanelCommand");
-
-  console.log("🟡 [DEBUG] openPanelCommand registered successfully!");
 
   console.log("🟡 [DEBUG] About to register indexWorkspaceCommand");
 
@@ -265,12 +262,12 @@ export function activate(context: vscode.ExtensionContext) {
   logger.info("VS Code Multi AI Chat extension activated successfully.");
 
   console.log("🟡 [DEBUG] ========== ACTIVATION COMPLETE ==========");
-
-  initErrorReporter(context);
 }
 
 export function deactivate() {
   console.log("🟡 [DEBUG] Extension deactivating...");
   logger.info("Deactivating the VS Code Multi AI Chat extension.");
-  disposeErrorReporter();
+
+  // ✅ NEW: Cleanup ErrorFixer
+  errorFixer.dispose();
 }
