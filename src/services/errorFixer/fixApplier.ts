@@ -85,7 +85,7 @@ class FixApplier {
   }
 
   /**
-   * Close all diff preview tabs
+   * Close all diff preview tabs without saving
    */
   private async closeDiffPreviews(): Promise<void> {
     const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
@@ -94,7 +94,8 @@ class FixApplier {
       // Close tabs that are diff previews (Untitled documents)
       if (tab.label.includes("Fix Preview") || tab.label.includes("Untitled")) {
         try {
-          await vscode.window.tabGroups.close(tab);
+          // Close without saving (don't prompt)
+          await vscode.window.tabGroups.close(tab, false);
         } catch {
           // Ignore errors
         }
