@@ -159,7 +159,7 @@ class FixApplier {
     // Ask user
     const choice = await vscode.window.showInformationMessage(
       `Apply this fix? (${fix.fixType})`,
-      { modal: false },
+      { modal: true }, // ← modal: true - не исчезнет!
       "✅ Apply",
       "❌ Reject",
       "👁️ View Explanation"

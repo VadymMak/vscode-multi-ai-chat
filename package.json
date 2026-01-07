@@ -122,6 +122,10 @@
       {
         "command": "multi-ai-chat.copyCurrentFileForAI",
         "title": "Smart Cline: Copy Current File for AI"
+      },
+      {
+        "command": "smartCline.quickAIFix",
+        "title": "Smart Cline: AI Fix Error"
       }
     ],
     "keybindings": [
@@ -159,6 +163,12 @@
         "command": "multi-ai-chat.copyContextForAI",
         "key": "ctrl+shift+c",
         "mac": "cmd+shift+c"
+      },
+      {
+        "command": "smartCline.quickAIFix",
+        "key": "ctrl+shift+.",
+        "mac": "cmd+shift+.",
+        "when": "editorTextFocus"
       }
     ],
     "menus": {

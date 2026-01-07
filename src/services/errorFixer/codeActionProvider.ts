@@ -4,6 +4,8 @@
  * Integrates our AI fixes into VS Code native Quick Fix menu.
  * Shows learned patterns from DB as recommended fixes.
  *
+ * NEW: Ctrl+Shift+. opens our AI Fix directly
+ *
  * File: src/services/errorFixer/codeActionProvider.ts
  */
 
@@ -261,8 +263,167 @@ export function registerCodeActionProvider(
   );
   context.subscriptions.push(generateAIFixCmd);
 
-  logger.info("✅ SmartFix commands registered");
+  // ✅ NEW: Register command: Quick AI Fix (Ctrl+Shift+.)
+  const quickAIFixCmd = vscode.commands.registerCommand(
+    "smartCline.quickAIFix",
+    async () => {
+      await quickAIFixAtCursor();
+    }
+  );
+  context.subscriptions.push(quickAIFixCmd);
+
+  logger.info("✅ SmartFix commands registered (including Ctrl+Shift+.)");
 }
+
+// ============================================
+// ✅ NEW: QUICK AI FIX AT CURSOR (Ctrl+Shift+.)
+// ============================================
+
+/**
+ * Quick AI Fix - finds error at cursor and generates fix
+ * Called by Ctrl+Shift+.
+ */
+async function quickAIFixAtCursor(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showWarningMessage("No file open");
+    return;
+  }
+
+  const document = editor.document;
+  const position = editor.selection.active;
+  const projectId = getCurrentProjectId();
+
+  if (!projectId) {
+    vscode.window.showWarningMessage("Please select a project first");
+    return;
+  }
+
+  // Get diagnostics at current line
+  const diagnostics = vscode.languages.getDiagnostics(document.uri);
+  const errorsAtLine = diagnostics.filter(
+    (d) =>
+      d.severity === vscode.DiagnosticSeverity.Error &&
+      d.range.start.line === position.line
+  );
+
+  // If no error at current line, check nearby lines
+  let targetError: vscode.Diagnostic | undefined = errorsAtLine[0];
+
+  if (!targetError) {
+    // Look for closest error
+    const allErrors = diagnostics.filter(
+      (d) => d.severity === vscode.DiagnosticSeverity.Error
+    );
+
+    if (allErrors.length === 0) {
+      vscode.window.showInformationMessage("No errors found in this file");
+      return;
+    }
+
+    // Find closest error to cursor
+    targetError = allErrors.reduce((closest, current) => {
+      const closestDist = Math.abs(closest.range.start.line - position.line);
+      const currentDist = Math.abs(current.range.start.line - position.line);
+      return currentDist < closestDist ? current : closest;
+    });
+
+    // Move cursor to error
+    const errorPos = targetError.range.start;
+    editor.selection = new vscode.Selection(errorPos, errorPos);
+    editor.revealRange(targetError.range, vscode.TextEditorRevealType.InCenter);
+  }
+
+  // Create detected error
+  const detectedError: DetectedError = {
+    text: targetError.message,
+    filePath: document.uri.fsPath,
+    line: targetError.range.start.line + 1,
+    source: "diagnostics",
+    timestamp: new Date(),
+    sourceName: targetError.source || "unknown",
+  };
+
+  // Classify
+  const classification = errorClassifier.classify(detectedError);
+
+  // Show what we're fixing
+  logger.info(
+    `🎯 Quick AI Fix: ${classification.type} at line ${detectedError.line}`
+  );
+
+  // Check for learned fix first
+  const learnedFix = await getLearnedFixForError(
+    projectId,
+    targetError.message,
+    classification.type
+  );
+
+  if (learnedFix && learnedFix.solution_pattern) {
+    // Show choice: use learned or generate new
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: `⭐ ${learnedFix.solution_pattern}`,
+          description: `Worked ${learnedFix.occurrence_count}x before`,
+          detail: "Use learned fix from previous errors",
+          value: "learned",
+        },
+        {
+          label: "🤖 Generate New AI Fix",
+          description: "Analyze and generate fresh fix",
+          detail: "Use AI to create new solution",
+          value: "new",
+        },
+      ],
+      {
+        placeHolder: `Fix: ${targetError.message.substring(0, 50)}...`,
+      }
+    );
+
+    if (!choice) return;
+
+    if (choice.value === "learned") {
+      await applyLearnedFix(document.uri, targetError.range, learnedFix);
+      return;
+    }
+  }
+
+  // Generate new AI fix
+  await generateAndApplyAIFix(
+    document.uri,
+    targetError.range,
+    detectedError,
+    classification,
+    projectId
+  );
+}
+
+/**
+ * Get learned fix for error (helper for quickAIFixAtCursor)
+ */
+async function getLearnedFixForError(
+  projectId: number,
+  errorPattern: string,
+  errorType: string
+): Promise<LearnedWarning | null> {
+  try {
+    const response = (await get(
+      `/vscode/learned-warnings/${projectId}?error_type=${errorType}&limit=1`
+    )) as any;
+
+    if (response.warnings && response.warnings.length > 0) {
+      return response.warnings[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================
+// FIX APPLICATION FUNCTIONS
+// ============================================
 
 /**
  * Apply a learned fix from database

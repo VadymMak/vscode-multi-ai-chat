@@ -278,6 +278,10 @@ class StatusBarManager {
     editor.selection = new vscode.Selection(position, position);
     editor.revealRange(diagnostic.range, vscode.TextEditorRevealType.InCenter);
 
+    setTimeout(() => {
+      vscode.commands.executeCommand("editor.action.quickFix");
+    }, 100);
+
     // Show hint about Quick Fix
     vscode.window
       .showInformationMessage(
