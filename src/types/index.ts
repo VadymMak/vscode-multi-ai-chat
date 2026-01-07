@@ -86,6 +86,7 @@ export interface DataRequest {
   filters?: Record<string, any>;
   limit?: number;
   offset?: number;
+  [key: string]: any;
 }
 
 export interface APIResponse {
@@ -122,3 +123,56 @@ export interface AIResponse {
 }
 export * from "./errorFixer";
 export * from "./dependencies";
+
+// ============================================
+// Auto-Learning Types
+// ============================================
+
+export interface ReportErrorRequest {
+  project_id: number;
+  error_pattern: string;
+  error_type: string;
+  error_code?: string;
+  file_path?: string;
+  line_number?: number;
+  code_snippet?: string;
+}
+
+export interface ReportErrorResponse {
+  success: boolean;
+  error_id: number;
+  is_new: boolean;
+  occurrence_count: number;
+  message: string;
+}
+
+export interface ReportFixRequest {
+  error_id: number;
+  original_code?: string;
+  fixed_code?: string;
+  fix_method: string;
+  solution_pattern?: string;
+}
+
+export interface ReportFixResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface LearnedWarning {
+  id: number;
+  error_pattern: string;
+  error_type: string;
+  error_code?: string;
+  solution_pattern?: string;
+  occurrence_count: number;
+  resolved_count: number;
+  success_rate: number;
+}
+
+export interface GetWarningsResponse {
+  success: boolean;
+  warnings: LearnedWarning[];
+  prompt_text: string;
+  count: number;
+}

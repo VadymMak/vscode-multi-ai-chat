@@ -17,6 +17,10 @@ import {
   copyContextForAI,
   copyCurrentFileForAI,
 } from "./commands/copyContextForAI";
+import {
+  initErrorReporter,
+  disposeErrorReporter,
+} from "./services/errorReporter";
 
 // Store selected project ID (will be updated from MainPanel)
 let currentProjectId: number | null = null;
@@ -261,9 +265,12 @@ export function activate(context: vscode.ExtensionContext) {
   logger.info("VS Code Multi AI Chat extension activated successfully.");
 
   console.log("🟡 [DEBUG] ========== ACTIVATION COMPLETE ==========");
+
+  initErrorReporter(context);
 }
 
 export function deactivate() {
   console.log("🟡 [DEBUG] Extension deactivating...");
   logger.info("Deactivating the VS Code Multi AI Chat extension.");
+  disposeErrorReporter();
 }
