@@ -12,7 +12,22 @@ interface EditFileResponse {
     context: number;
     total: number;
   };
+  // NEW: Retry-related fields
+  error?: string;
+  error_type?: string;
+  failed_search_block?: string;
+  attempt?: number;
 }
+
+interface LastError {
+  attempt: number;
+  error: string;
+  error_type: string;
+  failed_search_block?: string;
+  hint: string;
+}
+
+const MAX_RETRIES = 3;
 
 export async function editFile(projectId: number | null): Promise<void> {
   console.log("🔴 [DEBUG] EDIT FILE COMMAND TRIGGERED!");
@@ -35,6 +50,7 @@ export async function editFile(projectId: number | null): Promise<void> {
 
     const document = editor.document;
     const filePath = vscode.workspace.asRelativePath(document.uri);
+    const currentContent = document.getText();
 
     console.log(`🟡 [editFile] File: ${filePath}, Project: ${projectId}`);
 
@@ -55,36 +71,17 @@ export async function editFile(projectId: number | null): Promise<void> {
 
     console.log(`🟡 [editFile] Instruction: ${instruction}`);
 
-    // 4. Show progress while calling API
-    const response = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "AI is editing your file...",
-        cancellable: false,
-      },
-      async (progress) => {
-        progress.report({ message: "Building context..." });
-
-        const axiosResponse = await apiClient.post<EditFileResponse>(
-          "/vscode/edit-file",
-          {
-            project_id: projectId,
-            file_path: filePath,
-            instruction: instruction,
-            current_content: document.getText(),
-          },
-          {
-            timeout: 90000, // 90 seconds for AI operations
-          }
-        );
-
-        return axiosResponse.data;
-      }
+    // 4. Call API with retry logic
+    const response = await editFileWithRetry(
+      projectId,
+      filePath,
+      instruction,
+      currentContent
     );
 
-    if (!response.success) {
+    if (!response || !response.success) {
       vscode.window.showErrorMessage(
-        "Failed to generate changes. Please try again."
+        "Failed to generate changes after multiple attempts. Please try with a different instruction."
       );
       return;
     }
@@ -113,12 +110,13 @@ export async function editFile(projectId: number | null): Promise<void> {
         tokensUsed: {
           context: response.tokens_used.context,
           total: response.tokens_used.total,
-          cost: (response.tokens_used.total / 1000000) * 10, // Rough estimate: $10 per 1M tokens
+          cost: (response.tokens_used.total / 1000000) * 10,
         },
         smartContext: response.tokens_used.context,
         instruction: instruction,
         fileName: filePath.split("/").pop() || filePath,
         filePath: filePath,
+        attempt: response.attempt || 1, // Show which attempt succeeded
       },
       actions: [
         {
@@ -154,13 +152,11 @@ export async function editFile(projectId: number | null): Promise<void> {
     if (approvalResponse.action === "apply") {
       console.log("🟢 [editFile] Applying changes...");
 
-      // Find the original file editor (should still be open in background)
       const originalFilePath = editor.document.uri.fsPath;
       let targetEditor = vscode.window.visibleTextEditors.find(
         (ed) => ed.document.uri.fsPath === originalFilePath
       );
 
-      // If not visible, open it
       if (!targetEditor) {
         const doc = await vscode.workspace.openTextDocument(
           vscode.Uri.file(originalFilePath)
@@ -170,14 +166,12 @@ export async function editFile(projectId: number | null): Promise<void> {
           vscode.ViewColumn.One
         );
       } else {
-        // Make it active
         await vscode.window.showTextDocument(
           targetEditor.document,
           vscode.ViewColumn.One
         );
       }
 
-      // Apply changes
       await applyChanges(targetEditor, response.new_content);
 
       vscode.window.showInformationMessage(
@@ -186,9 +180,8 @@ export async function editFile(projectId: number | null): Promise<void> {
     } else if (approvalResponse.action === "edit") {
       console.log("🔄 [editFile] User wants to edit instruction");
 
-      await closeDiffEditor(filePath); // Close diff editor
+      await closeDiffEditor(filePath);
 
-      // Show original file
       const originalFilePath = editor.document.uri.fsPath;
       const doc = await vscode.workspace.openTextDocument(
         vscode.Uri.file(originalFilePath)
@@ -201,9 +194,8 @@ export async function editFile(projectId: number | null): Promise<void> {
     } else {
       console.log("🟡 [editFile] Changes rejected");
 
-      await closeDiffEditor(filePath); // Close diff editor
+      await closeDiffEditor(filePath);
 
-      // Show original file
       const originalFilePath = editor.document.uri.fsPath;
       const doc = await vscode.workspace.openTextDocument(
         vscode.Uri.file(originalFilePath)
@@ -231,6 +223,126 @@ export async function editFile(projectId: number | null): Promise<void> {
       );
     }
   }
+}
+
+/**
+ * Call edit API with retry logic.
+ * If SEARCH/REPLACE fails, retry with error context.
+ */
+async function editFileWithRetry(
+  projectId: number,
+  filePath: string,
+  instruction: string,
+  currentContent: string
+): Promise<EditFileResponse | null> {
+  let lastError: LastError | null = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`🔄 [editFile] Attempt ${attempt}/${MAX_RETRIES}`);
+
+    try {
+      const response = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `AI is editing your file${attempt > 1 ? ` (Retry ${attempt}/${MAX_RETRIES})` : ""}...`,
+          cancellable: false,
+        },
+        async (progress) => {
+          if (attempt === 1) {
+            progress.report({ message: "Building context..." });
+          } else {
+            progress.report({ message: `Retrying with error feedback...` });
+          }
+
+          const axiosResponse = await apiClient.post<EditFileResponse>(
+            "/vscode/edit-file",
+            {
+              project_id: projectId,
+              file_path: filePath,
+              instruction: instruction,
+              current_content: currentContent,
+              // NEW: Pass last error for retry context
+              last_error: lastError,
+              attempt: attempt,
+            },
+            {
+              timeout: 90000,
+            }
+          );
+
+          return axiosResponse.data;
+        }
+      );
+
+      // Success!
+      if (response.success) {
+        if (attempt > 1) {
+          console.log(`✅ [editFile] Succeeded on attempt ${attempt}`);
+          vscode.window.showInformationMessage(
+            `✅ Edit succeeded on retry ${attempt}/${MAX_RETRIES}`
+          );
+        }
+        return { ...response, attempt };
+      }
+
+      // Failed - prepare error context for next attempt
+      console.log(`⚠️ [editFile] Attempt ${attempt} failed: ${response.error}`);
+
+      lastError = {
+        attempt: attempt,
+        error: response.error || "SEARCH block not found in file",
+        error_type: response.error_type || "search_not_found",
+        failed_search_block: response.failed_search_block,
+        hint: getRetryHint(attempt, response.error_type),
+      };
+
+    } catch (error: any) {
+      console.error(`❌ [editFile] Attempt ${attempt} exception:`, error);
+
+      // Check if it's a 400 error (SEARCH not found)
+      if (error.response?.status === 400) {
+        const detail = error.response?.data?.detail || "Unknown error";
+        
+        lastError = {
+          attempt: attempt,
+          error: detail,
+          error_type: "search_not_found",
+          failed_search_block: error.response?.data?.failed_search_block,
+          hint: getRetryHint(attempt, "search_not_found"),
+        };
+
+        console.log(`⚠️ [editFile] Will retry. Error: ${detail}`);
+        continue;
+      }
+
+      // Other errors - don't retry
+      throw error;
+    }
+  }
+
+  // All retries failed
+  console.error(`❌ [editFile] All ${MAX_RETRIES} attempts failed`);
+  
+  if (lastError) {
+    vscode.window.showErrorMessage(
+      `Failed after ${MAX_RETRIES} attempts. Last error: ${lastError.error}`
+    );
+  }
+
+  return null;
+}
+
+/**
+ * Get hint message for retry based on attempt number
+ */
+function getRetryHint(attempt: number, errorType?: string): string {
+  const hints: Record<number, string> = {
+    1: "SEARCH blocks must match file EXACTLY. Check whitespace and indentation.",
+    2: "Try using smaller, more unique code sections. Include distinctive lines.",
+    3: "Copy the EXACT text from the file, character-for-character. Check for hidden characters.",
+  };
+
+  return hints[attempt] || hints[1];
 }
 
 async function applyChanges(
