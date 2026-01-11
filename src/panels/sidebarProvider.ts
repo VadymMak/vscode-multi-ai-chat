@@ -781,52 +781,89 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         requestId: requestId,
         response: { success: true, data: response.data },
       });
-       } catch (err) {
+         } catch (err) {
       const error = err as any;
       console.error("❌ [SidebarProvider] API error:", error.message || error);
+
+      // ✅ DEBUG: Log full error structure
+      console.log(`🔍 [SidebarProvider] Error debug:`, {
+        hasResponse: !!error.response,
+        responseStatus: error.response?.status,
+        hasData: !!error.response?.data,
+        dataType: typeof error.response?.data,
+        hasDetail: !!error.response?.data?.detail,
+        detailType: typeof error.response?.data?.detail,
+      });
+      
+      if (error.response?.data) {
+        console.log(`🔍 [SidebarProvider] error.response.data:`, JSON.stringify(error.response.data).substring(0, 500));
+      }
 
       if (error.response?.status === 401) {
         console.log(`🔓 [SidebarProvider] 401 - clearing token`);
         await this._context.secrets.delete("authToken");
       }
 
-      // ✅ FIXED: Preserve full error structure for retry logic
+      // ✅ FIXED: Build error response
       let errorResponse: any = { 
         success: false, 
         error: "Request failed" 
       };
 
       if (error.response?.data) {
-        // Backend returned structured error (e.g., 400 with detail)
-        const detail = error.response.data.detail;
+        const data = error.response.data;
         
-        if (detail && typeof detail === 'object') {
-          // ✅ Structured error from backend (edit failures, etc.)
+        // ✅ NEW: Check if data itself is the structured error (JSONResponse format)
+        if (data.error_type) {
+          // Direct structured error from JSONResponse
+          errorResponse = {
+            success: false,
+            error: data.message || "Request failed",
+            error_type: data.error_type,
+            failed_search_block: data.failed_search_block,
+            block_index: data.block_index,
+          };
+          console.log(`🔄 [SidebarProvider] JSONResponse structured error:`, {
+            error_type: data.error_type,
+            has_failed_block: !!data.failed_search_block
+          });
+        }
+        // ✅ OLD: Check for detail wrapper (HTTPException format - fallback)
+        else if (data.detail && typeof data.detail === 'object') {
+          const detail = data.detail;
           errorResponse = {
             success: false,
             error: detail.message || "Request failed",
             error_type: detail.error_type,
             failed_search_block: detail.failed_search_block,
             block_index: detail.block_index,
-            // Include full detail for frontend retry logic
-            detail: detail
           };
-          console.log(`🔄 [SidebarProvider] Structured error:`, {
+          console.log(`🔄 [SidebarProvider] HTTPException structured error:`, {
             error_type: detail.error_type,
             has_failed_block: !!detail.failed_search_block
           });
-        } else if (typeof detail === 'string') {
+        }
+        else if (typeof data.detail === 'string') {
           // Simple string error
-          errorResponse.error = detail;
-        } else {
+          errorResponse.error = data.detail;
+          console.log(`📝 [SidebarProvider] String detail error:`, data.detail);
+        }
+        else if (data.message) {
+          // Message field directly
+          errorResponse.error = data.message;
+          console.log(`📝 [SidebarProvider] Message error:`, data.message);
+        }
+        else {
           // Other error format
-          errorResponse.error = JSON.stringify(error.response.data);
+          errorResponse.error = JSON.stringify(data);
+          console.log(`📦 [SidebarProvider] Other error format:`, data);
         }
         
         // Include HTTP status
         errorResponse.status = error.response.status;
       } else if (error.message) {
         errorResponse.error = error.message;
+        console.log(`💬 [SidebarProvider] Message error:`, error.message);
       }
 
       console.log(`📤 [SidebarProvider] Sending error response:`, errorResponse);
