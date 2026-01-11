@@ -3,6 +3,13 @@ import apiClient from "../api/apiClient";
 import { SidebarProvider } from "../panels/sidebarProvider";
 import { showDiffInEditor, closeDiffEditor } from "../utils/diffEditor";
 
+// ============================================================
+// FILE SIZE LIMITS
+// ============================================================
+const MAX_FILE_SIZE_WARNING = 20000;    // 20K chars - show info
+const MAX_FILE_SIZE_LARGE = 50000;      // 50K chars - show warning
+const MAX_FILE_SIZE_ABSOLUTE = 100000;  // 100K chars - reject
+
 interface EditFileResponse {
   success: boolean;
   original_content: string;
@@ -53,8 +60,35 @@ export async function editFile(projectId: number | null): Promise<void> {
     const currentContent = document.getText();
 
     console.log(`🟡 [editFile] File: ${filePath}, Project: ${projectId}`);
+    console.log(`🟡 [editFile] File size: ${currentContent.length} chars`);
 
-    // 3. Get instruction from user
+    // 3. Check file size limits
+    if (currentContent.length > MAX_FILE_SIZE_ABSOLUTE) {
+      vscode.window.showErrorMessage(
+        `❌ File is too large (${Math.round(currentContent.length / 1000)}K chars). ` +
+        `Maximum supported size is ${MAX_FILE_SIZE_ABSOLUTE / 1000}K chars. ` +
+        `Please select a specific section to edit or split the file.`
+      );
+      return;
+    }
+
+    if (currentContent.length > MAX_FILE_SIZE_LARGE) {
+      const choice = await vscode.window.showWarningMessage(
+        `⚠️ File is large (${Math.round(currentContent.length / 1000)}K chars). ` +
+        `AI will focus on relevant sections. This may take longer and be less accurate.`,
+        "Continue Anyway",
+        "Cancel"
+      );
+      if (choice !== "Continue Anyway") {
+        return;
+      }
+    } else if (currentContent.length > MAX_FILE_SIZE_WARNING) {
+      vscode.window.showInformationMessage(
+        `📄 File is ${Math.round(currentContent.length / 1000)}K chars. Processing...`
+      );
+    }
+
+    // 4. Get instruction from user
     const instruction = await vscode.window.showInputBox({
       prompt: "What changes do you want to make to this file?",
       placeHolder: 'e.g., "Add error handling", "Refactor to use async/await"',
@@ -116,6 +150,7 @@ export async function editFile(projectId: number | null): Promise<void> {
         instruction: instruction,
         fileName: filePath.split("/").pop() || filePath,
         filePath: filePath,
+        fileSize: currentContent.length, // ✅ NEW: Show file size
         attempt: response.attempt || 1, // Show which attempt succeeded
       },
       actions: [
@@ -299,16 +334,28 @@ async function editFileWithRetry(
     } catch (error: any) {
       console.error(`❌ [editFile] Attempt ${attempt} exception:`, error);
 
-      // Check if it's a 400 error (SEARCH not found)
+      // Check if it's a 400 error
       if (error.response?.status === 400) {
-        const detail = error.response?.data?.detail || "Unknown error";
+        const errorData = error.response?.data || {};
+        const errorType = errorData.error_type || "unknown";
+        const detail = errorData.message || errorData.detail || "Unknown error";
         
+        // ✅ NEW: Handle file_too_large - don't retry
+        if (errorType === "file_too_large") {
+          console.log(`❌ [editFile] File too large, not retrying`);
+          vscode.window.showErrorMessage(
+            `❌ ${detail}`
+          );
+          return null;
+        }
+        
+        // SEARCH not found - retry with context
         lastError = {
           attempt: attempt,
           error: detail,
-          error_type: "search_not_found",
-          failed_search_block: error.response?.data?.failed_search_block,
-          hint: getRetryHint(attempt, "search_not_found"),
+          error_type: errorType,
+          failed_search_block: errorData.failed_search_block,
+          hint: getRetryHint(attempt, errorType),
         };
 
         console.log(`⚠️ [editFile] Will retry. Error: ${detail}`);
