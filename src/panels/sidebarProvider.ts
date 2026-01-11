@@ -781,7 +781,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         requestId: requestId,
         response: { success: true, data: response.data },
       });
-    } catch (err) {
+       } catch (err) {
       const error = err as any;
       console.error("❌ [SidebarProvider] API error:", error.message || error);
 
@@ -790,17 +790,51 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         await this._context.secrets.delete("authToken");
       }
 
-      let errorMessage = "Request failed";
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
+      // ✅ FIXED: Preserve full error structure for retry logic
+      let errorResponse: any = { 
+        success: false, 
+        error: "Request failed" 
+      };
+
+      if (error.response?.data) {
+        // Backend returned structured error (e.g., 400 with detail)
+        const detail = error.response.data.detail;
+        
+        if (detail && typeof detail === 'object') {
+          // ✅ Structured error from backend (edit failures, etc.)
+          errorResponse = {
+            success: false,
+            error: detail.message || "Request failed",
+            error_type: detail.error_type,
+            failed_search_block: detail.failed_search_block,
+            block_index: detail.block_index,
+            // Include full detail for frontend retry logic
+            detail: detail
+          };
+          console.log(`🔄 [SidebarProvider] Structured error:`, {
+            error_type: detail.error_type,
+            has_failed_block: !!detail.failed_search_block
+          });
+        } else if (typeof detail === 'string') {
+          // Simple string error
+          errorResponse.error = detail;
+        } else {
+          // Other error format
+          errorResponse.error = JSON.stringify(error.response.data);
+        }
+        
+        // Include HTTP status
+        errorResponse.status = error.response.status;
       } else if (error.message) {
-        errorMessage = error.message;
+        errorResponse.error = error.message;
       }
+
+      console.log(`📤 [SidebarProvider] Sending error response:`, errorResponse);
 
       webview.postMessage({
         command: "apiResponse",
         requestId: requestId,
-        response: { success: false, error: errorMessage },
+        response: errorResponse,
       });
     }
   }
