@@ -853,7 +853,7 @@ const ChatView: React.FC = () => {
 
   const fileInfo = getFileInfo();
 
-  // ✅ FIXED: Render the active plan UI with proper Apply buttons
+  // ✅ FIXED: Render the active plan UI with proper Apply buttons and safety checks
   const renderPlanView = () => {
     if (!activePlan) return null;
 
@@ -900,6 +900,13 @@ const ChatView: React.FC = () => {
             const isExecuting = executingStep === stepNum;
             const result = stepResults[stepNum];
             const isApplied = appliedSteps.has(stepNum);
+            
+            // ✅ NEW: Safety check for suspiciously short content
+            const contentLength = result?.result?.new_content?.length || 0;
+            const isSuspiciouslyShort = contentLength > 0 && contentLength < 200;
+            const isErrorResponse = result?.result?.new_content?.includes('[ERROR]') || 
+                                    result?.result?.new_content?.toLowerCase().includes('quota') ||
+                                    result?.result?.new_content?.toLowerCase().includes('rate limit');
 
             return (
               <div
@@ -941,23 +948,36 @@ const ChatView: React.FC = () => {
                   <div className="step-error">❌ {step.error}</div>
                 )}
 
-                {/* ✅ FIXED: Show result preview for completed create/edit steps */}
+                {/* ✅ FIXED: Show result preview for completed create/edit steps with safety checks */}
                 {result?.result?.new_content && step.status === "completed" && (
-                  <div className="step-result-preview">
+                  <div className={`step-result-preview ${isErrorResponse ? 'error-response' : ''} ${isSuspiciouslyShort ? 'warning-response' : ''}`}>
                     <div className="result-header">
-                      <span>📝 Generated Code ({result.result.new_content.length} chars)</span>
+                      <span>📝 Generated Code ({contentLength} chars)</span>
+                      
+                      {/* ✅ NEW: Warning badges for problematic responses */}
+                      {isErrorResponse && (
+                        <span className="error-badge">❌ API Error - Do NOT Apply!</span>
+                      )}
+                      {isSuspiciouslyShort && !isErrorResponse && (
+                        <span className="warning-badge">⚠️ Suspiciously short!</span>
+                      )}
+                      
                       {isApplied ? (
                         <span className="applied-badge">✅ Applied</span>
+                      ) : isErrorResponse ? (
+                        <span className="blocked-badge">🚫 Blocked</span>
                       ) : (
                         <button
-                          className="apply-step-btn"
+                          className={`apply-step-btn ${isSuspiciouslyShort ? 'warning' : ''}`}
                           onClick={() => handleApplyStepResult(stepNum)}
+                          disabled={isErrorResponse}
+                          title={isSuspiciouslyShort ? 'Warning: Content seems too short. Review before applying!' : 'Apply changes to file'}
                         >
-                          ✅ Apply to File
+                          {isSuspiciouslyShort ? '⚠️ Apply (Review First!)' : '✅ Apply to File'}
                         </button>
                       )}
                     </div>
-                    <pre className="result-code">
+                    <pre className={`result-code ${isErrorResponse ? 'error-code' : ''}`}>
                       {result.result.new_content.slice(0, 500)}
                       {result.result.new_content.length > 500 ? "\n\n... (truncated)" : ""}
                     </pre>

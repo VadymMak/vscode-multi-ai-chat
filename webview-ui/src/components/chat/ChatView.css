@@ -1264,3 +1264,48 @@
 .plan-steps::-webkit-scrollbar-thumb:hover {
   background: #555555;
 }
+/* Error/Warning styles for step results */
+.step-result-preview.error-response {
+  border: 2px solid #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.step-result-preview.warning-response {
+  border: 2px solid #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.error-badge {
+  background: #f44336;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.warning-badge {
+  background: #ff9800;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.blocked-badge {
+  background: #9e9e9e;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.apply-step-btn.warning {
+  background: #ff9800;
+  border-color: #f57c00;
+}
+
+.result-code.error-code {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
