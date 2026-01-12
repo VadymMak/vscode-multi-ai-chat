@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
-// ✅ Store current diff session ID for cleanup
+// Store current diff session for cleanup
 let currentDiffSessionId: string | null = null;
+let currentOriginalUri: vscode.Uri | null = null;
+let currentModifiedUri: vscode.Uri | null = null;
 
 /**
  * Get file extension from path
@@ -21,48 +23,41 @@ function getBaseName(filePath: string): string {
   return ext ? base.slice(0, -ext.length) : base;
 }
 
-/**
- * Build URI that preserves file extension for proper syntax highlighting
- * Example: "src/components/App.tsx" → "untitled:App.original.12345.tsx"
- */
-function buildDiffUri(filePath: string, suffix: string, sessionId: string): vscode.Uri {
-  const baseName = getBaseName(filePath);
-  const ext = getExtension(filePath);
-  
-  // Build: basename.suffix.sessionId.ext (unique per session)
-  const newName = `${baseName}.${suffix}.${sessionId}${ext}`;
-  
-  return vscode.Uri.parse(`untitled:${newName}`);
-}
-
 export async function showDiffInEditor(
   filePath: string,
   originalContent: string,
   modifiedContent: string
 ): Promise<void> {
-  // ✅ Generate unique session ID
+  // Generate unique session ID
   currentDiffSessionId = Date.now().toString();
   
-  // Build URIs with proper extensions and unique session ID
-  const originalUri = buildDiffUri(filePath, "original", currentDiffSessionId);
-  const modifiedUri = buildDiffUri(filePath, "modified", currentDiffSessionId);
+  const baseName = getBaseName(filePath);
+  const ext = getExtension(filePath);
+  
+  // Build unique URIs
+  const originalName = `${baseName}.original.${currentDiffSessionId}${ext}`;
+  const modifiedName = `${baseName}.modified.${currentDiffSessionId}${ext}`;
+  
+  currentOriginalUri = vscode.Uri.parse(`untitled:${originalName}`);
+  currentModifiedUri = vscode.Uri.parse(`untitled:${modifiedName}`);
 
   console.log(`📄 [Diff] Session: ${currentDiffSessionId}`);
-  console.log(`📄 [Diff] Original URI: ${originalUri.toString()}`);
-  console.log(`📄 [Diff] Modified URI: ${modifiedUri.toString()}`);
+  console.log(`📄 [Diff] Original: ${originalName}`);
+  console.log(`📄 [Diff] Modified: ${modifiedName}`);
 
-  const originalDoc = await vscode.workspace.openTextDocument(originalUri);
-  const modifiedDoc = await vscode.workspace.openTextDocument(modifiedUri);
+  // Create and fill documents
+  const originalDoc = await vscode.workspace.openTextDocument(currentOriginalUri);
+  const modifiedDoc = await vscode.workspace.openTextDocument(currentModifiedUri);
 
   const originalEdit = new vscode.WorkspaceEdit();
-  originalEdit.insert(originalUri, new vscode.Position(0, 0), originalContent);
+  originalEdit.insert(currentOriginalUri, new vscode.Position(0, 0), originalContent);
   await vscode.workspace.applyEdit(originalEdit);
 
   const modifiedEdit = new vscode.WorkspaceEdit();
-  modifiedEdit.insert(modifiedUri, new vscode.Position(0, 0), modifiedContent);
+  modifiedEdit.insert(currentModifiedUri, new vscode.Position(0, 0), modifiedContent);
   await vscode.workspace.applyEdit(modifiedEdit);
 
-  // ✅ Only show diff view, not individual documents
+  // Show ONLY the diff view
   await vscode.commands.executeCommand(
     "vscode.diff",
     originalDoc.uri,
@@ -71,35 +66,68 @@ export async function showDiffInEditor(
   );
 }
 
-export async function closeDiffEditor(filePath: string): Promise<void> {
+export async function closeDiffEditor(_filePath: string): Promise<void> {
   if (!currentDiffSessionId) {
     console.log(`[Diff] No active session to close`);
     return;
   }
 
   const sessionId = currentDiffSessionId;
-  currentDiffSessionId = null; // Clear session
+  const origUri = currentOriginalUri;
+  const modUri = currentModifiedUri;
+  
+  // Clear session state immediately
+  currentDiffSessionId = null;
+  currentOriginalUri = null;
+  currentModifiedUri = null;
 
   console.log(`📄 [Diff] Closing session: ${sessionId}`);
 
-  // ✅ Close ALL diff-related tabs without saving
-  const allTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
-  
-  for (const tab of allTabs) {
-    const label = tab.label || "";
-    
-    // Check if this tab is part of our diff session
-    if (label.includes(`.original.${sessionId}`) || 
-        label.includes(`.modified.${sessionId}`) ||
-        label.includes("AI Changes:")) {
+  // Close tabs by iterating through all tab groups
+  for (const tabGroup of vscode.window.tabGroups.all) {
+    for (const tab of tabGroup.tabs) {
+      let shouldClose = false;
       
-      console.log(`📄 [Diff] Closing tab: ${label}`);
+      // Check if it's a diff tab
+      if (tab.input instanceof vscode.TabInputTextDiff) {
+        const diffInput = tab.input as vscode.TabInputTextDiff;
+        if (
+          (origUri && diffInput.original.toString() === origUri.toString()) ||
+          (modUri && diffInput.modified.toString() === modUri.toString())
+        ) {
+          shouldClose = true;
+        }
+      }
+      // Check if it's a text tab (original or modified)
+      else if (tab.input instanceof vscode.TabInputText) {
+        const textInput = tab.input as vscode.TabInputText;
+        const uriStr = textInput.uri.toString();
+        if (
+          (origUri && uriStr === origUri.toString()) ||
+          (modUri && uriStr === modUri.toString())
+        ) {
+          shouldClose = true;
+        }
+      }
+      // Fallback: check label
+      else if (tab.label) {
+        if (
+          tab.label.includes(`.original.${sessionId}`) ||
+          tab.label.includes(`.modified.${sessionId}`) ||
+          tab.label.startsWith("AI Changes:")
+        ) {
+          shouldClose = true;
+        }
+      }
       
-      try {
-        // ✅ Close without saving (important for untitled files!)
-        await vscode.window.tabGroups.close(tab, false);
-      } catch (err) {
-        console.log(`[Diff] Could not close tab ${label}: ${err}`);
+      if (shouldClose) {
+        console.log(`📄 [Diff] Closing tab: ${tab.label}`);
+        try {
+          await vscode.window.tabGroups.close(tab);
+        } catch (err) {
+          // Ignore errors - tab might already be closed
+          console.log(`[Diff] Tab close warning: ${err}`);
+        }
       }
     }
   }

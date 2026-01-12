@@ -300,7 +300,6 @@ async function editFileWithRetry(
               file_path: filePath,
               instruction: instruction,
               current_content: currentContent,
-              // NEW: Pass last error for retry context
               last_error: lastError,
               attempt: attempt,
             },
@@ -324,7 +323,7 @@ async function editFileWithRetry(
         return { ...response, attempt };
       }
 
-      // Failed - prepare error context for next attempt
+      // Response received but not successful - prepare for retry
       console.log(`⚠️ [editFile] Attempt ${attempt} failed: ${response.error}`);
 
       lastError = {
@@ -334,26 +333,27 @@ async function editFileWithRetry(
         failed_search_block: response.failed_search_block,
         hint: getRetryHint(attempt, response.error_type),
       };
+      
+      // Continue to next attempt
+      continue;
 
     } catch (error: any) {
       console.error(`❌ [editFile] Attempt ${attempt} exception:`, error);
 
-      // Check if it's a 400 error
+      // Check if it's a 400 error (validation/search error from backend)
       if (error.response?.status === 400) {
         const errorData = error.response?.data || {};
-        const errorType = errorData.error_type || "unknown";
-        const detail = errorData.message || errorData.detail || "Unknown error";
+        const errorType = errorData.error_type || "search_not_found";
+        const detail = errorData.message || errorData.detail || "SEARCH block not found";
         
-        // ✅ NEW: Handle file_too_large - don't retry
+        // Handle file_too_large - don't retry
         if (errorType === "file_too_large") {
           console.log(`❌ [editFile] File too large, not retrying`);
-          vscode.window.showErrorMessage(
-            `❌ ${detail}`
-          );
+          vscode.window.showErrorMessage(`❌ ${detail}`);
           return null;
         }
         
-        // SEARCH not found - retry with context
+        // SEARCH not found or other recoverable error - prepare for retry
         lastError = {
           attempt: attempt,
           error: detail,
@@ -362,16 +362,30 @@ async function editFileWithRetry(
           hint: getRetryHint(attempt, errorType),
         };
 
-        console.log(`⚠️ [editFile] Will retry. Error: ${detail}`);
+        console.log(`⚠️ [editFile] Will retry (attempt ${attempt}). Error: ${detail}`);
+        
+        // Continue to next iteration
         continue;
       }
 
-      // Other errors - don't retry
+      // Non-400 errors (network, timeout, etc.) - also retry
+      if (attempt < MAX_RETRIES) {
+        console.log(`⚠️ [editFile] Network/other error, will retry...`);
+        lastError = {
+          attempt: attempt,
+          error: error.message || "Unknown error",
+          error_type: "network_error",
+          hint: "Retrying due to network issue...",
+        };
+        continue;
+      }
+
+      // Last attempt failed with non-recoverable error
       throw error;
     }
   }
 
-  // All retries failed
+  // All retries exhausted
   console.error(`❌ [editFile] All ${MAX_RETRIES} attempts failed`);
   
   if (lastError) {
