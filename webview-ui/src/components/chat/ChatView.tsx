@@ -73,6 +73,9 @@ const ChatView: React.FC = () => {
   const [stepResults, setStepResults] = useState<
     Record<number, ExecuteStepResult>
   >({});
+  
+  // ✅ NEW: Track which steps have been applied
+  const [appliedSteps, setAppliedSteps] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const savedMessages = loadMessagesFromStorage();
@@ -343,6 +346,7 @@ const ChatView: React.FC = () => {
 
       setActivePlan(plan);
       setStepResults({});
+      setAppliedSteps(new Set()); // ✅ Reset applied steps
 
       // Add plan as AI message
       const planMessage: ExtendedMessage = {
@@ -362,40 +366,45 @@ const ChatView: React.FC = () => {
     }
   };
 
+  // ✅ FIXED: Handle step execution with proper logging
   const handleExecuteStep = async (stepNum: number) => {
-  if (!activePlan || executingStep !== null) return;
+    if (!activePlan || executingStep !== null) return;
 
-  setExecutingStep(stepNum);
-  setError(null);
+    setExecutingStep(stepNum);
+    setError(null);
 
-  try {
-    const step = activePlan.steps[stepNum - 1];
-    console.log(`⚡ [ChatView] Executing step ${stepNum}:`, step.description);
-    console.log(`⚡ [ChatView] Step action: ${step.action}, file: ${step.file_path}`);
+    try {
+      const step = activePlan.steps[stepNum - 1];
+      console.log(`⚡ [ChatView] Executing step ${stepNum}:`, step.description);
+      console.log(`⚡ [ChatView] Step action: ${step.action}, file: ${step.file_path}`);
 
-    // For edit steps, we need to get current file content
-    let fileContent: string | undefined;
-    if (step.action === "edit" && step.file_path) {
-      if (fileContext?.filePath?.endsWith(step.file_path.split("/").pop() || "")) {
-        fileContent = fileContext.fileContent;
-        console.log(`📄 [ChatView] Using local file content: ${fileContext.filePath}`);
-      } else {
-        console.log(`⚠️ [ChatView] No local file content for: ${step.file_path}`);
+      // For edit steps, we need to get current file content
+      let fileContent: string | undefined;
+      if (step.action === "edit" && step.file_path) {
+        if (fileContext?.filePath?.endsWith(step.file_path.split("/").pop() || "")) {
+          fileContent = fileContext.fileContent;
+          console.log(`📄 [ChatView] Using local file content: ${fileContext.filePath}`);
+        } else {
+          console.log(`⚠️ [ChatView] No local file content for: ${step.file_path}`);
+          // Backend will try to get from database
+        }
       }
-    }
 
-    const result = await executeStep(activePlan.plan_id, stepNum, fileContent);
+      const result = await executeStep(activePlan.plan_id, stepNum, fileContent);
 
-    // ✅ DETAILED LOGGING
-    console.log(`✅ [ChatView] Step ${stepNum} result:`, {
-      success: result.success,
-      step_status: result.step?.status,
-      has_result: !!result.result,
-      result_action: result.result?.action,
-      result_file_path: result.result?.file_path,
-      result_new_content_length: result.result?.new_content?.length || 0,
-      plan_completed: result.plan_completed,
-    });
+      // ✅ DETAILED LOGGING
+      console.log(`✅ [ChatView] Step ${stepNum} result:`, {
+        success: result.success,
+        step_status: result.step?.status,
+        has_result: !!result.result,
+        result_action: result.result?.action,
+        result_file_path: result.result?.file_path,
+        result_new_content_length: result.result?.new_content?.length || 0,
+        plan_completed: result.plan_completed,
+      });
+
+      // ✅ Log full result for debugging
+      console.log(`🔍 [ChatView] Step ${stepNum} FULL result.result:`, result.result);
 
       // Update step results
       setStepResults((prev) => ({
@@ -411,17 +420,19 @@ const ChatView: React.FC = () => {
         return { ...prev, steps: updatedSteps };
       });
 
-      // If plan completed, show completion message
+      // ✅ FIXED: If plan completed, show completion message but DON'T remove plan!
+      // User needs to Apply each step's changes first!
       if (result.plan_completed) {
         const completionMessage: ExtendedMessage = {
           id: Date.now().toString(),
-          content: `🎉 **Task Completed!**\n\nAll steps have been executed successfully.`,
+          content: `🎉 **All Steps Executed!**\n\nPlease review and click **"✅ Apply"** for each step to save the changes to your files.`,
           sender: "ai",
           timestamp: new Date().toISOString(),
           response_type: "chat",
         };
         setMessages((prev) => [...prev, completionMessage]);
-        setActivePlan(null);
+        // ❌ DON'T do: setActivePlan(null);
+        // Plan will be cleared when user clicks "Done - Dismiss Plan"
       }
     } catch (err) {
       const errorMessage = getErrorMessage(err);
@@ -463,8 +474,16 @@ const ChatView: React.FC = () => {
         return { ...prev, steps: updatedSteps };
       });
 
+      // ✅ FIXED: Don't remove plan even if completed - user may still want to apply other steps
       if (result.plan_completed) {
-        setActivePlan(null);
+        const completionMessage: ExtendedMessage = {
+          id: Date.now().toString(),
+          content: `🎉 **All Steps Processed!**\n\nPlease review and click **"✅ Apply"** for completed steps to save the changes.`,
+          sender: "ai",
+          timestamp: new Date().toISOString(),
+          response_type: "chat",
+        };
+        setMessages((prev) => [...prev, completionMessage]);
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -482,6 +501,7 @@ const ChatView: React.FC = () => {
 
       setActivePlan(null);
       setStepResults({});
+      setAppliedSteps(new Set());
 
       const cancelMessage: ExtendedMessage = {
         id: Date.now().toString(),
@@ -496,17 +516,50 @@ const ChatView: React.FC = () => {
     }
   };
 
-  // ✅ NEW: Apply step result (create/edit file)
+  // ✅ NEW: Dismiss plan (after user has applied all changes)
+  const handleDismissPlan = () => {
+    console.log(`✅ [ChatView] Dismissing plan`);
+    setActivePlan(null);
+    setStepResults({});
+    setAppliedSteps(new Set());
+  };
+
+  // ✅ FIXED: Apply step result (create/edit file) with logging
   const handleApplyStepResult = (stepNum: number) => {
+    console.log(`🔧 [ChatView] handleApplyStepResult called for step ${stepNum}`);
+    
     const result = stepResults[stepNum];
-    if (!result?.result) return;
+    console.log(`🔧 [ChatView] stepResults[${stepNum}]:`, result);
+    
+    if (!result?.result) {
+      console.error(`❌ [ChatView] No result for step ${stepNum}`);
+      return;
+    }
 
     const { action, file_path, new_content } = result.result;
+    
+    console.log(`✏️ [ChatView] Applying step ${stepNum}:`, {
+      action,
+      file_path,
+      new_content_length: new_content?.length || 0,
+    });
 
     if (action === "create" && file_path && new_content) {
+      console.log(`📄 [ChatView] Creating file: ${file_path}`);
       createFile(file_path, new_content);
+      // ✅ Mark as applied
+      setAppliedSteps((prev) => new Set([...prev, stepNum]));
     } else if (action === "edit" && file_path && new_content) {
+      console.log(`✏️ [ChatView] Editing file: ${file_path}`);
       applyFileEdit(file_path, new_content);
+      // ✅ Mark as applied
+      setAppliedSteps((prev) => new Set([...prev, stepNum]));
+    } else {
+      console.error(`❌ [ChatView] Cannot apply - missing data:`, { 
+        action, 
+        file_path, 
+        has_content: !!new_content 
+      });
     }
   };
 
@@ -800,7 +853,7 @@ const ChatView: React.FC = () => {
 
   const fileInfo = getFileInfo();
 
-  // ✅ NEW: Render the active plan UI
+  // ✅ FIXED: Render the active plan UI with proper Apply buttons
   const renderPlanView = () => {
     if (!activePlan) return null;
 
@@ -808,6 +861,11 @@ const ChatView: React.FC = () => {
       (s) => s.status === "completed"
     ).length;
     const progress = (completedSteps / activePlan.total_steps) * 100;
+    
+    // ✅ Check if all steps are done (completed or skipped)
+    const allStepsDone = activePlan.steps.every(
+      (s) => s.status === "completed" || s.status === "skipped"
+    );
 
     return (
       <div className="plan-view">
@@ -841,18 +899,21 @@ const ChatView: React.FC = () => {
             const stepNum = index + 1;
             const isExecuting = executingStep === stepNum;
             const result = stepResults[stepNum];
+            const isApplied = appliedSteps.has(stepNum);
 
             return (
               <div
                 key={stepNum}
                 className={`plan-step ${step.status} ${
                   isExecuting ? "executing" : ""
-                }`}
+                } ${isApplied ? "applied" : ""}`}
               >
                 <div className="step-header">
                   <span className="step-number">
-                    {step.status === "completed"
+                    {isApplied
                       ? "✅"
+                      : step.status === "completed"
+                      ? "🔵"
                       : step.status === "failed"
                       ? "❌"
                       : step.status === "skipped"
@@ -880,21 +941,25 @@ const ChatView: React.FC = () => {
                   <div className="step-error">❌ {step.error}</div>
                 )}
 
-                {/* Show result preview for completed create/edit steps */}
+                {/* ✅ FIXED: Show result preview for completed create/edit steps */}
                 {result?.result?.new_content && step.status === "completed" && (
                   <div className="step-result-preview">
                     <div className="result-header">
-                      <span>Generated Code Preview</span>
-                      <button
-                        className="apply-step-btn"
-                        onClick={() => handleApplyStepResult(stepNum)}
-                      >
-                        ✅ Apply
-                      </button>
+                      <span>📝 Generated Code ({result.result.new_content.length} chars)</span>
+                      {isApplied ? (
+                        <span className="applied-badge">✅ Applied</span>
+                      ) : (
+                        <button
+                          className="apply-step-btn"
+                          onClick={() => handleApplyStepResult(stepNum)}
+                        >
+                          ✅ Apply to File
+                        </button>
+                      )}
                     </div>
                     <pre className="result-code">
                       {result.result.new_content.slice(0, 500)}
-                      {result.result.new_content.length > 500 ? "..." : ""}
+                      {result.result.new_content.length > 500 ? "\n\n... (truncated)" : ""}
                     </pre>
                   </div>
                 )}
@@ -957,6 +1022,17 @@ const ChatView: React.FC = () => {
           >
             ▶️ Execute All Remaining
           </button>
+          
+          {/* ✅ NEW: Dismiss button - shown when all steps are done */}
+          {allStepsDone && (
+            <button
+              className="dismiss-plan-btn"
+              onClick={handleDismissPlan}
+            >
+              ✅ Done - Dismiss Plan
+            </button>
+          )}
+          
           <button
             className="cancel-plan-btn"
             onClick={handleCancelPlan}
