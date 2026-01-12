@@ -80,26 +80,26 @@ export async function closeDiffEditor(filePath: string): Promise<void> {
   const sessionId = currentDiffSessionId;
   currentDiffSessionId = null; // Clear session
 
-  // Build URIs with same session ID
-  const originalUri = buildDiffUri(filePath, "original", sessionId);
-  const modifiedUri = buildDiffUri(filePath, "modified", sessionId);
-
   console.log(`📄 [Diff] Closing session: ${sessionId}`);
 
-  // Close all editors with these URIs
+  // ✅ Close ALL diff-related tabs without saving
   const allTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
   
   for (const tab of allTabs) {
-    if (tab.input instanceof vscode.TabInputText) {
-      const uri = tab.input.uri.toString();
-      if (uri === originalUri.toString() || uri === modifiedUri.toString()) {
-        await vscode.window.tabGroups.close(tab);
-      }
-    } else if (tab.input instanceof vscode.TabInputTextDiff) {
-      const origUri = tab.input.original.toString();
-      const modUri = tab.input.modified.toString();
-      if (origUri === originalUri.toString() || modUri === modifiedUri.toString()) {
-        await vscode.window.tabGroups.close(tab);
+    const label = tab.label || "";
+    
+    // Check if this tab is part of our diff session
+    if (label.includes(`.original.${sessionId}`) || 
+        label.includes(`.modified.${sessionId}`) ||
+        label.includes("AI Changes:")) {
+      
+      console.log(`📄 [Diff] Closing tab: ${label}`);
+      
+      try {
+        // ✅ Close without saving (important for untitled files!)
+        await vscode.window.tabGroups.close(tab, false);
+      } catch (err) {
+        console.log(`[Diff] Could not close tab ${label}: ${err}`);
       }
     }
   }
