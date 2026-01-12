@@ -46,7 +46,7 @@ export async function showDiffInEditor(
   console.log(`📄 [Diff] Original URI: ${originalUri.toString()}`);
   console.log(`📄 [Diff] Modified URI: ${modifiedUri.toString()}`);
 
-  const originalDoc = await vscode.workspace.openTextDocument(originalUri);
+ const originalDoc = await vscode.workspace.openTextDocument(originalUri);
   const modifiedDoc = await vscode.workspace.openTextDocument(modifiedUri);
 
   const originalEdit = new vscode.WorkspaceEdit();
@@ -57,8 +57,9 @@ export async function showDiffInEditor(
   modifiedEdit.insert(modifiedUri, new vscode.Position(0, 0), modifiedContent);
   await vscode.workspace.applyEdit(modifiedEdit);
 
-  await vscode.window.showTextDocument(originalDoc, vscode.ViewColumn.One);
-  await vscode.window.showTextDocument(modifiedDoc, vscode.ViewColumn.Two);
+  // ✅ DON'T show documents separately - only show diff view
+  // await vscode.window.showTextDocument(originalDoc, vscode.ViewColumn.One);
+  // await vscode.window.showTextDocument(modifiedDoc, vscode.ViewColumn.Two);
 
   await vscode.commands.executeCommand(
     "vscode.diff",
