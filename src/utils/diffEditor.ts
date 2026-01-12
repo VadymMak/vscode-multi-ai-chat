@@ -6,17 +6,11 @@ let currentDiffSessionId: string | null = null;
 let currentOriginalUri: vscode.Uri | null = null;
 let currentModifiedUri: vscode.Uri | null = null;
 
-/**
- * Get file extension from path
- */
 function getExtension(filePath: string): string {
   const ext = path.extname(filePath);
   return ext || ".txt";
 }
 
-/**
- * Get filename without extension
- */
 function getBaseName(filePath: string): string {
   const ext = path.extname(filePath);
   const base = path.basename(filePath);
@@ -73,8 +67,6 @@ export async function closeDiffEditor(_filePath: string): Promise<void> {
   }
 
   const sessionId = currentDiffSessionId;
-  const origUri = currentOriginalUri;
-  const modUri = currentModifiedUri;
   
   // Clear session state immediately
   currentDiffSessionId = null;
@@ -83,52 +75,42 @@ export async function closeDiffEditor(_filePath: string): Promise<void> {
 
   console.log(`📄 [Diff] Closing session: ${sessionId}`);
 
-  // Close tabs by iterating through all tab groups
+  // ✅ Close ALL editors and revert without save prompt
+  // Use executeCommand which handles dirty files better
+  
+  // First, close the diff view
+  await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+  
+  // Small delay to let VS Code process
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Close any remaining tabs with our session ID
+  const tabsToClose: vscode.Tab[] = [];
+  
   for (const tabGroup of vscode.window.tabGroups.all) {
     for (const tab of tabGroup.tabs) {
-      let shouldClose = false;
-      
-      // Check if it's a diff tab
-      if (tab.input instanceof vscode.TabInputTextDiff) {
-        const diffInput = tab.input as vscode.TabInputTextDiff;
-        if (
-          (origUri && diffInput.original.toString() === origUri.toString()) ||
-          (modUri && diffInput.modified.toString() === modUri.toString())
-        ) {
-          shouldClose = true;
-        }
+      if (tab.label && (
+        tab.label.includes(`.original.${sessionId}`) ||
+        tab.label.includes(`.modified.${sessionId}`)
+      )) {
+        tabsToClose.push(tab);
       }
-      // Check if it's a text tab (original or modified)
-      else if (tab.input instanceof vscode.TabInputText) {
-        const textInput = tab.input as vscode.TabInputText;
-        const uriStr = textInput.uri.toString();
-        if (
-          (origUri && uriStr === origUri.toString()) ||
-          (modUri && uriStr === modUri.toString())
-        ) {
-          shouldClose = true;
-        }
+    }
+  }
+  
+  // Close collected tabs - use closeAll which doesn't prompt for untitled
+  for (const tab of tabsToClose) {
+    console.log(`📄 [Diff] Closing remaining tab: ${tab.label}`);
+    try {
+      // Focus the tab first
+      if (tab.input instanceof vscode.TabInputText) {
+        const doc = await vscode.workspace.openTextDocument(tab.input.uri);
+        await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: false });
+        // Revert and close - this command doesn't show save dialog for untitled
+        await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
       }
-      // Fallback: check label
-      else if (tab.label) {
-        if (
-          tab.label.includes(`.original.${sessionId}`) ||
-          tab.label.includes(`.modified.${sessionId}`) ||
-          tab.label.startsWith("AI Changes:")
-        ) {
-          shouldClose = true;
-        }
-      }
-      
-      if (shouldClose) {
-        console.log(`📄 [Diff] Closing tab: ${tab.label}`);
-        try {
-          await vscode.window.tabGroups.close(tab);
-        } catch (err) {
-          // Ignore errors - tab might already be closed
-          console.log(`[Diff] Tab close warning: ${err}`);
-        }
-      }
+    } catch (err) {
+      console.log(`[Diff] Tab close warning: ${err}`);
     }
   }
 }
