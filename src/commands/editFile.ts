@@ -187,6 +187,10 @@ export async function editFile(projectId: number | null): Promise<void> {
     if (approvalResponse.action === "apply") {
       console.log("🟢 [editFile] Applying changes...");
 
+      // ✅ Close diff editor FIRST before applying
+      console.log("🟢 [editFile] Closing diff editor...");
+      await closeDiffEditor(filePath);
+
       const originalFilePath = editor.document.uri.fsPath;
       let targetEditor = vscode.window.visibleTextEditors.find(
         (ed) => ed.document.uri.fsPath === originalFilePath

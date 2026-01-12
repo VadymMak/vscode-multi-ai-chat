@@ -34,6 +34,12 @@ export async function findError(projectId: number | null): Promise<void> {
   const fileName = filePath.split(/[/\\]/).pop() || "";
   const language = document.languageId;
 
+  // ✅ Skip diff preview files (temporary files for AI changes review)
+  if (fileName.includes('.original.') || fileName.includes('.modified.')) {
+    logger.info(`Skipping diff preview file: ${fileName}`);
+    return;
+  }
+
   // 3. Get error text - from selection or ask user
   let errorText = "";
   const selection = editor.selection;
