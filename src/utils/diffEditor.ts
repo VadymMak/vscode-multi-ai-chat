@@ -1,116 +1,205 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
-// Store current diff session for cleanup
-let currentDiffSessionId: string | null = null;
-let currentOriginalUri: vscode.Uri | null = null;
-let currentModifiedUri: vscode.Uri | null = null;
+// ============================================================
+// CLINE-STYLE DIFF VIEW PROVIDER
+// Uses registerTextDocumentContentProvider for readonly virtual documents
+// No save prompts, clean closing!
+// ============================================================
 
+const DIFF_SCHEME = "multi-ai-diff";
+
+// Store content for virtual documents
+const documentContents = new Map<string, string>();
+
+// Current diff session
+let currentDiffSession: {
+  sessionId: string;
+  filePath: string;
+  originalUri: vscode.Uri;
+  modifiedUri: vscode.Uri;
+} | null = null;
+
+// Content provider for readonly virtual documents
+class DiffContentProvider implements vscode.TextDocumentContentProvider {
+  private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this._onDidChange.event;
+
+  provideTextDocumentContent(uri: vscode.Uri): string {
+    const content = documentContents.get(uri.toString());
+    return content || "";
+  }
+
+  update(uri: vscode.Uri): void {
+    this._onDidChange.fire(uri);
+  }
+}
+
+// Singleton provider instance
+let diffProvider: DiffContentProvider | null = null;
+let providerDisposable: vscode.Disposable | null = null;
+
+/**
+ * Initialize the diff content provider (call this in extension activate)
+ */
+export function initDiffProvider(context: vscode.ExtensionContext): void {
+  if (diffProvider) return;
+  
+  diffProvider = new DiffContentProvider();
+  providerDisposable = vscode.workspace.registerTextDocumentContentProvider(
+    DIFF_SCHEME,
+    diffProvider
+  );
+  context.subscriptions.push(providerDisposable);
+  
+  console.log(`📄 [Diff] Provider registered with scheme: ${DIFF_SCHEME}`);
+}
+
+/**
+ * Get file extension from path
+ */
 function getExtension(filePath: string): string {
   const ext = path.extname(filePath);
   return ext || ".txt";
 }
 
+/**
+ * Get filename without extension
+ */
 function getBaseName(filePath: string): string {
   const ext = path.extname(filePath);
   const base = path.basename(filePath);
   return ext ? base.slice(0, -ext.length) : base;
 }
 
+/**
+ * Build URI for diff content provider
+ * Format: multi-ai-diff:/original/{sessionId}/{filename}
+ */
+function buildDiffUri(filePath: string, type: "original" | "modified", sessionId: string): vscode.Uri {
+  const fileName = path.basename(filePath);
+  return vscode.Uri.parse(`${DIFF_SCHEME}:/${type}/${sessionId}/${fileName}`);
+}
+
+/**
+ * Show diff in editor using virtual readonly documents
+ */
 export async function showDiffInEditor(
   filePath: string,
   originalContent: string,
   modifiedContent: string
 ): Promise<void> {
+  // Initialize provider if not done
+  if (!diffProvider) {
+    console.error("❌ [Diff] Provider not initialized! Call initDiffProvider first.");
+    throw new Error("Diff provider not initialized");
+  }
+
+  // Close any existing diff session
+  if (currentDiffSession) {
+    await closeDiffEditor(currentDiffSession.filePath);
+  }
+
   // Generate unique session ID
-  currentDiffSessionId = Date.now().toString();
+  const sessionId = Date.now().toString();
   
-  const baseName = getBaseName(filePath);
-  const ext = getExtension(filePath);
-  
-  // Build unique URIs
-  const originalName = `${baseName}.original.${currentDiffSessionId}${ext}`;
-  const modifiedName = `${baseName}.modified.${currentDiffSessionId}${ext}`;
-  
-  currentOriginalUri = vscode.Uri.parse(`untitled:${originalName}`);
-  currentModifiedUri = vscode.Uri.parse(`untitled:${modifiedName}`);
+  // Build URIs
+  const originalUri = buildDiffUri(filePath, "original", sessionId);
+  const modifiedUri = buildDiffUri(filePath, "modified", sessionId);
 
-  console.log(`📄 [Diff] Session: ${currentDiffSessionId}`);
-  console.log(`📄 [Diff] Original: ${originalName}`);
-  console.log(`📄 [Diff] Modified: ${modifiedName}`);
+  console.log(`📄 [Diff] Session: ${sessionId}`);
+  console.log(`📄 [Diff] Original URI: ${originalUri.toString()}`);
+  console.log(`📄 [Diff] Modified URI: ${modifiedUri.toString()}`);
 
-  // Create and fill documents
-  const originalDoc = await vscode.workspace.openTextDocument(currentOriginalUri);
-  const modifiedDoc = await vscode.workspace.openTextDocument(currentModifiedUri);
+  // Store content for provider
+  documentContents.set(originalUri.toString(), originalContent);
+  documentContents.set(modifiedUri.toString(), modifiedContent);
 
-  const originalEdit = new vscode.WorkspaceEdit();
-  originalEdit.insert(currentOriginalUri, new vscode.Position(0, 0), originalContent);
-  await vscode.workspace.applyEdit(originalEdit);
+  // Save session info
+  currentDiffSession = {
+    sessionId,
+    filePath,
+    originalUri,
+    modifiedUri,
+  };
 
-  const modifiedEdit = new vscode.WorkspaceEdit();
-  modifiedEdit.insert(currentModifiedUri, new vscode.Position(0, 0), modifiedContent);
-  await vscode.workspace.applyEdit(modifiedEdit);
-
-  // Show ONLY the diff view
+  // Open diff view
   await vscode.commands.executeCommand(
     "vscode.diff",
-    originalDoc.uri,
-    modifiedDoc.uri,
+    originalUri,
+    modifiedUri,
     `AI Changes: ${path.basename(filePath)}`
   );
 }
 
+/**
+ * Close diff editor - clean up virtual documents
+ */
 export async function closeDiffEditor(_filePath: string): Promise<void> {
-  if (!currentDiffSessionId) {
+  if (!currentDiffSession) {
     console.log(`[Diff] No active session to close`);
     return;
   }
 
-  const sessionId = currentDiffSessionId;
+  const { sessionId, originalUri, modifiedUri } = currentDiffSession;
   
-  // Clear session state immediately
-  currentDiffSessionId = null;
-  currentOriginalUri = null;
-  currentModifiedUri = null;
-
   console.log(`📄 [Diff] Closing session: ${sessionId}`);
 
-  // ✅ Close ALL editors and revert without save prompt
-  // Use executeCommand which handles dirty files better
-  
-  // First, close the diff view
-  await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-  
-  // Small delay to let VS Code process
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  // Close any remaining tabs with our session ID
-  const tabsToClose: vscode.Tab[] = [];
-  
+  // Clear session first
+  currentDiffSession = null;
+
+  // Remove content from storage
+  documentContents.delete(originalUri.toString());
+  documentContents.delete(modifiedUri.toString());
+
+  // Close all related tabs
   for (const tabGroup of vscode.window.tabGroups.all) {
     for (const tab of tabGroup.tabs) {
-      if (tab.label && (
-        tab.label.includes(`.original.${sessionId}`) ||
-        tab.label.includes(`.modified.${sessionId}`)
-      )) {
-        tabsToClose.push(tab);
+      let shouldClose = false;
+      
+      // Check if it's a diff tab
+      if (tab.input instanceof vscode.TabInputTextDiff) {
+        const diffInput = tab.input as vscode.TabInputTextDiff;
+        if (
+          diffInput.original.scheme === DIFF_SCHEME ||
+          diffInput.modified.scheme === DIFF_SCHEME
+        ) {
+          shouldClose = true;
+        }
+      }
+      // Check if it's a text tab with our scheme
+      else if (tab.input instanceof vscode.TabInputText) {
+        const textInput = tab.input as vscode.TabInputText;
+        if (textInput.uri.scheme === DIFF_SCHEME) {
+          shouldClose = true;
+        }
+      }
+      
+      if (shouldClose) {
+        console.log(`📄 [Diff] Closing tab: ${tab.label}`);
+        try {
+          // Virtual documents don't need saving - just close
+          await vscode.window.tabGroups.close(tab);
+        } catch (err) {
+          // Ignore - tab might already be closed
+        }
       }
     }
   }
   
-  // Close collected tabs - use closeAll which doesn't prompt for untitled
-  for (const tab of tabsToClose) {
-    console.log(`📄 [Diff] Closing remaining tab: ${tab.label}`);
-    try {
-      // Focus the tab first
-      if (tab.input instanceof vscode.TabInputText) {
-        const doc = await vscode.workspace.openTextDocument(tab.input.uri);
-        await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: false });
-        // Revert and close - this command doesn't show save dialog for untitled
-        await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
-      }
-    } catch (err) {
-      console.log(`[Diff] Tab close warning: ${err}`);
-    }
-  }
+  console.log(`✅ [Diff] Session ${sessionId} closed`);
+}
+
+/**
+ * Check if a file is a diff virtual document
+ */
+export function isDiffDocument(uri: vscode.Uri): boolean {
+  return uri.scheme === DIFF_SCHEME;
+}
+
+/**
+ * Get the current diff session info
+ */
+export function getCurrentDiffSession() {
+  return currentDiffSession;
 }

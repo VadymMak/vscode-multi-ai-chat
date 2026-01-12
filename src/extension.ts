@@ -3,6 +3,7 @@ import AuthManager from "./auth/authManager";
 
 import logger from "./utils/logger";
 import { initFileContextTracking } from "./utils/fileContext";
+import { initDiffProvider } from "./utils/diffEditor"; // ✅ NEW
 import { indexWorkspace } from "./services/fileIndexerService";
 import { findRelatedFiles } from "./commands/findRelatedFiles";
 import { explainFile } from "./commands/explainFile";
@@ -18,7 +19,7 @@ import {
   copyCurrentFileForAI,
 } from "./commands/copyContextForAI";
 
-// Store selected project ID (will be updated from MainPanel)
+// Store selected project ID
 let currentProjectId: number | null = null;
 
 export function setCurrentProjectId(projectId: number | null) {
@@ -31,23 +32,17 @@ export function getCurrentProjectId(): number | null {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log("🟡 [DEBUG] ========== ACTIVATION STARTED ==========");
-
   logger.info("Activating the VS Code Multi AI Chat extension.");
 
-  console.log("🟡 [DEBUG] Initializing file context tracking...");
+  // Initialize core services
   initFileContextTracking(context);
-  logger.info("FileContext tracking initialized");
-
-  console.log("🟡 [DEBUG] Setting up file watcher...");
+  initDiffProvider(context); // ✅ NEW: Initialize diff provider (Cline-style)
   setupFileWatcher(context);
-  logger.info("File watcher initialized for incremental re-indexing");
+  
+  // Initialize AuthManager
+  AuthManager.initialize(context);
 
-  console.log("🟡 [DEBUG] Initializing AuthManager...");
-  const authManager = AuthManager.initialize(context);
-  logger.info("AuthManager initialized with context");
-
-  console.log("🟡 [DEBUG] Registering sidebar provider...");
+  // Register sidebar provider
   const sidebarProvider = new SidebarProvider(context.extensionUri, context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -55,68 +50,48 @@ export function activate(context: vscode.ExtensionContext) {
       sidebarProvider
     )
   );
-  logger.info("✅ Sidebar provider registered");
 
-  // ✅ NEW: Initialize ErrorFixer v2 (status bar + quick fix + auto-learning)
-  console.log("🟡 [DEBUG] Initializing ErrorFixer v2...");
+  // Initialize ErrorFixer v2
   errorFixer.initialize(context);
-  logger.info("✅ ErrorFixer v2 initialized");
 
-  // Initialize Terminal Watcher for auto error detection
-  console.log("🟡 [DEBUG] Setting up Terminal Watcher...");
+  // Initialize Terminal Watcher
   const terminalWatcher = TerminalWatcher.getInstance();
   terminalWatcher.startWatching(context);
 
-  // Register error detection callback - uses new ErrorFixer system
+  // Register error detection callback
   const errorDetectionDisposable = terminalWatcher.onErrorDetected(
     async (detectedError) => {
-      console.log(
-        "🔴 [DEBUG] Error detected:",
-        detectedError.text.substring(0, 100)
-      );
+      console.log("🔴 [DEBUG] Error detected:", detectedError.text.substring(0, 100));
 
-      // Convert to DetectedError format
       const error = {
         text: detectedError.text,
         filePath: null as string | null,
         line: null as number | null,
-        source:
-          detectedError.terminalName === "Diagnostics"
-            ? ("diagnostics" as const)
-            : ("terminal" as const),
+        source: detectedError.terminalName === "Diagnostics"
+          ? ("diagnostics" as const)
+          : ("terminal" as const),
         timestamp: detectedError.timestamp,
         sourceName: detectedError.terminalName,
       };
 
-      // Use ErrorFixer to handle (v2: no popup, just logs)
       await errorFixer.handleError(error, currentProjectId);
     }
   );
   context.subscriptions.push(errorDetectionDisposable);
-  logger.info("✅ Terminal Watcher initialized");
 
-  console.log("🟡 [DEBUG] About to register indexWorkspaceCommand");
-
-  const indexWorkspaceCommand = vscode.commands.registerCommand(
-    "vscode-multi-ai-chat.indexWorkspace",
-    async () => {
-      console.log("🔵 [DEBUG] INDEX WORKSPACE COMMAND TRIGGERED!");
-
+  // Register commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand("vscode-multi-ai-chat.indexWorkspace", async () => {
       const projectIdStr = await vscode.window.showInputBox({
         prompt: "Enter Project ID to index files into",
         placeHolder: "e.g., 42",
         validateInput: (value) => {
           const num = parseInt(value);
-          if (isNaN(num) || num <= 0) {
-            return "Please enter a valid positive number";
-          }
-          return null;
+          return (isNaN(num) || num <= 0) ? "Please enter a valid positive number" : null;
         },
       });
 
-      if (!projectIdStr) {
-        return;
-      }
+      if (!projectIdStr) return;
 
       const projectId = parseInt(projectIdStr);
 
@@ -129,145 +104,51 @@ export function activate(context: vscode.ExtensionContext) {
         async (progress) => {
           try {
             progress.report({ message: "Scanning files..." });
-
             const result = await indexWorkspace(projectId);
-
             vscode.window.showInformationMessage(
               `✅ Indexed ${result.indexed} files, skipped ${result.skipped}, errors ${result.errors}`
             );
           } catch (error) {
-            const errorMsg =
-              error instanceof Error ? error.message : String(error);
+            const errorMsg = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`❌ Indexing failed: ${errorMsg}`);
           }
         }
       );
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] indexWorkspaceCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to register findRelatedFilesCommand");
-
-  const findRelatedFilesCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.findRelatedFiles",
-    () => {
-      console.log("🔵 [DEBUG] FIND RELATED FILES COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.findRelatedFiles", () => {
       findRelatedFiles(currentProjectId);
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] findRelatedFilesCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to register explainFileCommand");
-
-  const explainFileCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.explainFile",
-    () => {
-      console.log("🔵 [DEBUG] EXPLAIN FILE COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.explainFile", () => {
       explainFile(currentProjectId);
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] explainFileCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to register showDependenciesCommand");
-
-  const showDependenciesCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.showDependencies",
-    () => {
-      console.log("🔵 [DEBUG] SHOW DEPENDENCIES COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.showDependencies", () => {
       showDependencies(currentProjectId);
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] showDependenciesCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to register findErrorCommand");
-
-  const findErrorCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.findError",
-    () => {
-      console.log("🔵 [DEBUG] FIND ERROR COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.findError", () => {
       findError(currentProjectId);
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] findErrorCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to register editFileCommand");
-
-  const editFileCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.editFile",
-    () => {
-      console.log("🔴 [DEBUG] EDIT FILE COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.editFile", () => {
       editFile(currentProjectId);
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] About to register copyContextCommand");
-
-  const copyContextCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.copyContextForAI",
-    () => {
-      console.log("🔵 [DEBUG] COPY CONTEXT FOR AI COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.copyContextForAI", () => {
       copyContextForAI(currentProjectId);
-    }
-  );
+    }),
 
-  console.log("🟡 [DEBUG] copyContextCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to register copyCurrentFileCommand");
-
-  const copyCurrentFileCommand = vscode.commands.registerCommand(
-    "multi-ai-chat.copyCurrentFileForAI",
-    () => {
-      console.log("🔵 [DEBUG] COPY CURRENT FILE FOR AI COMMAND TRIGGERED!");
+    vscode.commands.registerCommand("multi-ai-chat.copyCurrentFileForAI", () => {
       copyCurrentFileForAI();
-    }
+    })
   );
-
-  console.log("🟡 [DEBUG] copyCurrentFileCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] editFileCommand registered successfully!");
-
-  console.log("🟡 [DEBUG] About to push all commands to subscriptions");
-
-  context.subscriptions.push(indexWorkspaceCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed indexWorkspaceCommand");
-
-  context.subscriptions.push(findRelatedFilesCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed findRelatedFilesCommand");
-
-  context.subscriptions.push(explainFileCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed explainFileCommand");
-
-  context.subscriptions.push(showDependenciesCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed showDependenciesCommand");
-
-  context.subscriptions.push(findErrorCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed findErrorCommand");
-
-  context.subscriptions.push(editFileCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed editFileCommand");
-
-  context.subscriptions.push(copyContextCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed copyContextCommand");
-
-  context.subscriptions.push(copyCurrentFileCommand);
-  console.log("🟡 [DEBUG] ✅ Pushed copyCurrentFileCommand");
-
-  console.log("🟡 [DEBUG] All commands pushed to subscriptions successfully!");
 
   logger.info("VS Code Multi AI Chat extension activated successfully.");
-
-  console.log("🟡 [DEBUG] ========== ACTIVATION COMPLETE ==========");
 }
 
 export function deactivate() {
-  console.log("🟡 [DEBUG] Extension deactivating...");
   logger.info("Deactivating the VS Code Multi AI Chat extension.");
-
-  // ✅ NEW: Cleanup ErrorFixer
   errorFixer.dispose();
 }
