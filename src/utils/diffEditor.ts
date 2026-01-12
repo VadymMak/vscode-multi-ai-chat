@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 
+// ✅ Store current diff session ID for cleanup
+let currentDiffSessionId: string | null = null;
+
 /**
  * Get file extension from path
  */
@@ -20,18 +23,16 @@ function getBaseName(filePath: string): string {
 
 /**
  * Build URI that preserves file extension for proper syntax highlighting
- * Example: "src/components/App.tsx" → "untitled:src/components/App.original.tsx"
+ * Example: "src/components/App.tsx" → "untitled:App.original.12345.tsx"
  */
-function buildDiffUri(filePath: string, suffix: string): vscode.Uri {
-  const dir = path.dirname(filePath);
+function buildDiffUri(filePath: string, suffix: string, sessionId: string): vscode.Uri {
   const baseName = getBaseName(filePath);
   const ext = getExtension(filePath);
   
-  // Build: dir/basename.suffix.ext
-  const newName = `${baseName}.${suffix}${ext}`;
-  const fullPath = dir !== "." ? `${dir}/${newName}` : newName;
+  // Build: basename.suffix.sessionId.ext (unique per session)
+  const newName = `${baseName}.${suffix}.${sessionId}${ext}`;
   
-  return vscode.Uri.parse(`untitled:${fullPath}`);
+  return vscode.Uri.parse(`untitled:${newName}`);
 }
 
 export async function showDiffInEditor(
@@ -39,14 +40,18 @@ export async function showDiffInEditor(
   originalContent: string,
   modifiedContent: string
 ): Promise<void> {
-  // Build URIs with proper extensions
-  const originalUri = buildDiffUri(filePath, "original");
-  const modifiedUri = buildDiffUri(filePath, "modified");
+  // ✅ Generate unique session ID
+  currentDiffSessionId = Date.now().toString();
+  
+  // Build URIs with proper extensions and unique session ID
+  const originalUri = buildDiffUri(filePath, "original", currentDiffSessionId);
+  const modifiedUri = buildDiffUri(filePath, "modified", currentDiffSessionId);
 
+  console.log(`📄 [Diff] Session: ${currentDiffSessionId}`);
   console.log(`📄 [Diff] Original URI: ${originalUri.toString()}`);
   console.log(`📄 [Diff] Modified URI: ${modifiedUri.toString()}`);
 
- const originalDoc = await vscode.workspace.openTextDocument(originalUri);
+  const originalDoc = await vscode.workspace.openTextDocument(originalUri);
   const modifiedDoc = await vscode.workspace.openTextDocument(modifiedUri);
 
   const originalEdit = new vscode.WorkspaceEdit();
@@ -57,10 +62,7 @@ export async function showDiffInEditor(
   modifiedEdit.insert(modifiedUri, new vscode.Position(0, 0), modifiedContent);
   await vscode.workspace.applyEdit(modifiedEdit);
 
-  // ✅ DON'T show documents separately - only show diff view
-  // await vscode.window.showTextDocument(originalDoc, vscode.ViewColumn.One);
-  // await vscode.window.showTextDocument(modifiedDoc, vscode.ViewColumn.Two);
-
+  // ✅ Only show diff view, not individual documents
   await vscode.commands.executeCommand(
     "vscode.diff",
     originalDoc.uri,
@@ -70,23 +72,35 @@ export async function showDiffInEditor(
 }
 
 export async function closeDiffEditor(filePath: string): Promise<void> {
-  // Use same URI building logic
-  const originalUri = buildDiffUri(filePath, "original");
-  const modifiedUri = buildDiffUri(filePath, "modified");
-
-  try {
-    const originalDoc = await vscode.workspace.openTextDocument(originalUri);
-    await vscode.window.showTextDocument(originalDoc);
-    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
-  } catch (err) {
-    console.log(`[Diff] Original doc already closed or not found`);
+  if (!currentDiffSessionId) {
+    console.log(`[Diff] No active session to close`);
+    return;
   }
 
-  try {
-    const modifiedDoc = await vscode.workspace.openTextDocument(modifiedUri);
-    await vscode.window.showTextDocument(modifiedDoc);
-    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
-  } catch (err) {
-    console.log(`[Diff] Modified doc already closed or not found`);
+  const sessionId = currentDiffSessionId;
+  currentDiffSessionId = null; // Clear session
+
+  // Build URIs with same session ID
+  const originalUri = buildDiffUri(filePath, "original", sessionId);
+  const modifiedUri = buildDiffUri(filePath, "modified", sessionId);
+
+  console.log(`📄 [Diff] Closing session: ${sessionId}`);
+
+  // Close all editors with these URIs
+  const allTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
+  
+  for (const tab of allTabs) {
+    if (tab.input instanceof vscode.TabInputText) {
+      const uri = tab.input.uri.toString();
+      if (uri === originalUri.toString() || uri === modifiedUri.toString()) {
+        await vscode.window.tabGroups.close(tab);
+      }
+    } else if (tab.input instanceof vscode.TabInputTextDiff) {
+      const origUri = tab.input.original.toString();
+      const modUri = tab.input.modified.toString();
+      if (origUri === originalUri.toString() || modUri === modifiedUri.toString()) {
+        await vscode.window.tabGroups.close(tab);
+      }
+    }
   }
 }
