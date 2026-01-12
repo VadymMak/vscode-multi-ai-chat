@@ -362,36 +362,40 @@ const ChatView: React.FC = () => {
     }
   };
 
-  // ✅ NEW: Execute a single step
   const handleExecuteStep = async (stepNum: number) => {
-    if (!activePlan || executingStep !== null) return;
+  if (!activePlan || executingStep !== null) return;
 
-    setExecutingStep(stepNum);
-    setError(null);
+  setExecutingStep(stepNum);
+  setError(null);
 
-    try {
-      const step = activePlan.steps[stepNum - 1];
-      console.log(`⚡ [ChatView] Executing step ${stepNum}:`, step.description);
+  try {
+    const step = activePlan.steps[stepNum - 1];
+    console.log(`⚡ [ChatView] Executing step ${stepNum}:`, step.description);
+    console.log(`⚡ [ChatView] Step action: ${step.action}, file: ${step.file_path}`);
 
-      // For edit steps, we need to get current file content
-      let fileContent: string | undefined;
-      if (step.action === "edit" && step.file_path) {
-        // Request file content from extension
-        // For now, use fileContext if it matches
-        if (
-          fileContext?.filePath?.endsWith(step.file_path.split("/").pop() || "")
-        ) {
-          fileContent = fileContext.fileContent;
-        }
+    // For edit steps, we need to get current file content
+    let fileContent: string | undefined;
+    if (step.action === "edit" && step.file_path) {
+      if (fileContext?.filePath?.endsWith(step.file_path.split("/").pop() || "")) {
+        fileContent = fileContext.fileContent;
+        console.log(`📄 [ChatView] Using local file content: ${fileContext.filePath}`);
+      } else {
+        console.log(`⚠️ [ChatView] No local file content for: ${step.file_path}`);
       }
+    }
 
-      const result = await executeStep(
-        activePlan.plan_id,
-        stepNum,
-        fileContent
-      );
+    const result = await executeStep(activePlan.plan_id, stepNum, fileContent);
 
-      console.log(`✅ [ChatView] Step ${stepNum} result:`, result);
+    // ✅ DETAILED LOGGING
+    console.log(`✅ [ChatView] Step ${stepNum} result:`, {
+      success: result.success,
+      step_status: result.step?.status,
+      has_result: !!result.result,
+      result_action: result.result?.action,
+      result_file_path: result.result?.file_path,
+      result_new_content_length: result.result?.new_content?.length || 0,
+      plan_completed: result.plan_completed,
+    });
 
       // Update step results
       setStepResults((prev) => ({
