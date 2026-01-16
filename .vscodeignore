@@ -1,8 +1,6 @@
 # Exclude node_modules and build artifacts
 node_modules
-# dist
-# out
-# build
+webview-ui/node_modules/**
 
 # Exclude test and coverage directories
 test
@@ -51,3 +49,6 @@ public/
 .env
 .env.local
 .env.*.local
+
+# Exclude Python files
+*.py

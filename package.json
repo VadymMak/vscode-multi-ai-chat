@@ -40,12 +40,6 @@
   "categories": [
     "Other"
   ],
-  "files": [
-    "dist",
-    "out",
-    "webview-ui/dist",
-    "resources"
-  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
